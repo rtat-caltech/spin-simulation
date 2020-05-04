@@ -4,3 +4,4 @@ figures
 data
 *.jld2
 *.png
+*.ipynb
