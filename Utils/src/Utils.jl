@@ -1,5 +1,5 @@
 module Utils
-export phase, planephase, smooth, file_paths, save_data
+export phase, planephase, smooth, file_paths, save_data, load_data
 
 using Dates
 using JLD2
@@ -24,7 +24,7 @@ function planephase(a)
     if length(size(a)) == 2
         return [atan(a[2,i], a[1,i]) for i=1:size(a)[2]]
     elseif length(size(a)) == 3
-        x = [planephase(a[:,:,i]; smoothing=smoothing) for i=1:size(a, 3)]
+        x = [planephase(a[:,:,i]) for i=1:size(a, 3)]
         return hcat(x...)
     end
 end
@@ -44,5 +44,13 @@ function save_data(no_noise_sol, sol, metadata, save_dir; datefmt="mm-dd-HH-MM-S
     dp, mp = file_paths(save_path)
     @save dp no_noise_sol sol
     @save mp metadata
+    return save_path
+end
+
+function load_data(save_path)
+    dp, mp = file_paths(save_path)
+    @load dp no_noise_sol sol
+    @load mp metadata
+    return no_noise_sol, sol, metadata
 end
 end

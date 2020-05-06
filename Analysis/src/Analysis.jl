@@ -1,5 +1,5 @@
 module Analysis
-export compare_phase, extract_noise, predict_phase, predict_shift, aggregate_data
+export compare_phase, extract_noise, predict_phase, predict_shift, aggregate_data, simulate_signal
 using Utils
 using Solve: SpinSolution
 
@@ -24,6 +24,11 @@ function compare_phase(no_noise, ensemble)
     else
         return phase_diff, nothing
     end
+end
+
+function simulate_signal(sol::SpinSolution)
+    phi = phase(sol.u[1:3,:,:], sol.u[4:6,:,:])[1,:,:]
+    return 1 .- cos.(phi)
 end
 
 function extract_noise(sol::SpinSolution; noisetype="phase", nsmooth=1, smoothtype="mean")
@@ -74,7 +79,7 @@ function aggregate_data(save_dir;
         selector=m->true, 
         key_func=(m,n,s)->0, 
         aggregator=(r,m,n,s)->(r==nothing ? [s] : append!(r,s)), 
-        postprocess=r->r)
+        postprocess=(k,r)->r)
     result = Dict()
     for (dp,mp)=data_iterator(save_dir)
         @load mp metadata
@@ -89,12 +94,12 @@ function aggregate_data(save_dir;
         end
         result[key] = aggregator(result[key], metadata, no_noise_sol, sol)
     end
+
     for key in keys(result)
         result[key] = postprocess(key, result[key])
     end
     result
 end
-
 
 function predict_phase(t; 
         B0=crit_dress_params["B0"],

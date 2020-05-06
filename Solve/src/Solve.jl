@@ -95,7 +95,8 @@ function run_simulations(tend, n;
         (sol.t, hcat(sol.u...)), false
     end
 
-    prob = prob_func(nothing, 0, 0)
+    #prob = prob_func(nothing, 0, 0)
+    prob = nothing
     cb = saveinplane ? ContinuousCallback((u,t,integ)->u[3],integ->nothing,save_positions=(true,false)) : nothing
     output_func = phaseonly ? (sol, i)->((sol.t, planephase(sol; smoothing=false)), false) : just_data_please
     ensembleprob = EnsembleProblem(prob, prob_func=prob_func, output_func=output_func)
