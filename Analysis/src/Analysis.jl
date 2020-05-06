@@ -6,7 +6,7 @@ using Solve: SpinSolution
 using JLD2
 using Statistics
 
-function compare_phase(no_noise, ensemble; precomputed=false)
+function compare_phase(no_noise, ensemble)
     if length(size(no_noise)) == 1
         ensemble_phase = ensemble
         no_noise_phase = no_noise

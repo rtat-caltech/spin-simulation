@@ -22,7 +22,7 @@ end
 
 function planephase(a)
     if length(size(a)) == 2
-        return [atan(a[3,i], a[2,i]) for i=1:size(a)[2]]
+        return [atan(a[2,i], a[1,i]) for i=1:size(a)[2]]
     elseif length(size(a)) == 3
         x = [planephase(a[:,:,i]; smoothing=smoothing) for i=1:size(a, 3)]
         return hcat(x...)

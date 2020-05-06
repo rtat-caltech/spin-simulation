@@ -36,13 +36,15 @@ include("noisegeneration.jl")
 
 function dS_dual(B0, B1, w, gyro1, gyro2; noise_itp=t->0)
     function dS(du, u, p, t)
-        By = B1*cos(w*t)+noise_itp(t)
-        du[1] = gyro1 * (-u[3]*By)
-        du[2] = gyro1 * (u[3]*B0)
-        du[3] = gyro1 * (u[1]*By - u[2]*B0)
-        du[4] = gyro2 * (-u[6]*By)
-        du[5] = gyro2 * (u[6]*B0)
-        du[6] = gyro2 * (u[4]*By - u[5]*B0)
+        Bx = B1*cos(w*t)+noise_itp(t)
+        By = 0
+        Bz = B0
+        du[1] = gyro1 * (u[2]*Bz - u[3]*By)
+        du[2] = gyro1 * (u[3]*Bx - u[1]*Bz)
+        du[3] = gyro1 * (u[1]*By - u[2]*Bx)
+        du[4] = gyro2 * (u[5]*Bz - u[6]*By)
+        du[5] = gyro2 * (u[6]*Bx - u[4]*Bz)
+        du[6] = gyro2 * (u[4]*By - u[5]*Bx)
     end
 end
 
@@ -63,7 +65,7 @@ function run_simulations(tend, n;
         downsample=1,
         phaseonly=false)
     Bnoise = B1*noiseratio
-    u0nh = [0.0, 0.0, 1.0, 0.0, sin(phase0), cos(phase0)]
+    u0nh = [1.0, 0.0, 0.0, cos(phase0), sin(phase0), 0.0]
     tspan = (0.0, tend)
     
     if nsave == 0 && length(saveat) == 0 && !saveinplane
@@ -94,7 +96,7 @@ function run_simulations(tend, n;
     end
 
     prob = prob_func(nothing, 0, 0)
-    cb = saveinplane ? ContinuousCallback((u,t,integ)->u[1],integ->nothing,save_positions=(true,false)) : nothing
+    cb = saveinplane ? ContinuousCallback((u,t,integ)->u[3],integ->nothing,save_positions=(true,false)) : nothing
     output_func = phaseonly ? (sol, i)->((sol.t, planephase(sol; smoothing=false)), false) : just_data_please
     ensembleprob = EnsembleProblem(prob, prob_func=prob_func, output_func=output_func)
     solution = solve(ensembleprob, Tsit5(), EnsembleThreads(), saveat=saveat, dense=false, callback=cb, 
