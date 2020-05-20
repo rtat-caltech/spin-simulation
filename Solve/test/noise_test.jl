@@ -22,8 +22,8 @@ end
         samp_r = samp.(r)
         @test std(samp_t) <= rms*1.05
         @test std(samp_t) >= rms*0.95
-        @test std(samp_r) <= rms*1.1
-        @test std(samp_r) >= rms*0.9
+        @test std(samp_r) <= rms*1.2
+        @test std(samp_r) >= rms*0.8
         @test prev==nothing || !arrayapprox(prev, samp_t)
         prev = samp_t
     end

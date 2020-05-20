@@ -20,6 +20,7 @@ using StaticArrays
 using DSP
 using Interpolations
 using SpecialFunctions
+using IterTools
 
 const neutrongyro = -1.83247172e4
 const he3gyro = -2.037894585e4
@@ -48,24 +49,28 @@ function dS_dual(B0, B1, w, gyro1, gyro2; noise_itp=t->0)
     end
 end
 
+function state_from_phases(phi1, phi2)
+    [cos(phi1), sin(phi1), 0.0, cos(phi2), sin(phi2), 0.0]
+end
+
 function run_simulations(tend, n; 
-        B0=crit_params["B0"], 
-        B1=crit_params["B1"],
-        w=crit_params["w"],
-        noiseratio=1e-4,
-        filtercutoff=0.0,
-        uppercutoff=0.0,
-        filtertype=Elliptic(7, 1, 60),
-        noiseiterator=nothing,
-        phase0=0,
-        noiserate=5000, 
-        nsave=0,
-        saveat=[],
-        saveinplane=false,
-        downsample=1,
-        phaseonly=false)
+                         B0=crit_params["B0"], 
+                         B1=crit_params["B1"],
+                         w=crit_params["w"],
+                         noiseratio=1e-4,
+                         filtercutoff=0.0,
+                         uppercutoff=0.0,
+                         filtertype=Elliptic(7, 1, 60),
+                         noiseiterator=nothing,
+                         initial_phases=(0.0,0.0),
+                         phaseiterator=nothing,                 
+                         noiserate=5000, 
+                         nsave=0,
+                         saveat=[],
+                         saveinplane=false,
+                         downsample=1,
+                         phaseonly=false)
     Bnoise = B1*noiseratio
-    u0nh = [1.0, 0.0, 0.0, cos(phase0), sin(phase0), 0.0]
     tspan = (0.0, tend)
     
     if nsave == 0 && length(saveat) == 0 && !saveinplane
@@ -76,9 +81,13 @@ function run_simulations(tend, n;
         saveat = range(tspan[1], tspan[2], length=nsave)
     end
     
+    if phaseiterator == nothing
+        phaseiterator = Iterators.repeated(initial_phases)
+    end
     if noiseiterator == nothing
         noiseiterator = NoiseIterator(Bnoise, tspan[2]-tspan[1], noiserate; filtercutoff=filtercutoff, uppercutoff=uppercutoff, filtertype=filtertype)
     end
+    phaseiterator = Iterators.Stateful(imap(p->state_from_phases(p...),phaseiterator))
     statefuliterator = Iterators.Stateful(noiseiterator)
     
     function prob_func(prob,i,repeat)
@@ -87,6 +96,7 @@ function run_simulations(tend, n;
         #    filtercutoff=filtercutoff, uppercutoff=uppercutoff, filtertype=filtertype)
         new_noise = popfirst!(statefuliterator)
         dS = dS_dual(B0, B1, w, neutrongyro, he3gyro; noise_itp=new_noise)
+        u0nh = popfirst!(phaseiterator)
         ODEProblem(dS,u0nh,tspan)
     end
     function just_data_please(sol, i)
