@@ -53,24 +53,31 @@ function state_from_phases(phi1, phi2)
     [cos(phi1), sin(phi1), 0.0, cos(phi2), sin(phi2), 0.0]
 end
 
+function make_stateful(arg, type)
+    if arg isa type
+        return Iterators.Stateful(Iterators.repeated(arg))
+    else
+        return Iterators.Stateful(arg)
+    end
+end
+
 function run_simulations(tend, n; 
                          B0=crit_params["B0"], 
                          B1=crit_params["B1"],
                          w=crit_params["w"],
-                         noiseratio=1e-4,
+                         Bnoise=crit_params["B1"]*1e-4,
                          filtercutoff=0.0,
                          uppercutoff=0.0,
                          filtertype=Elliptic(7, 1, 60),
                          noiseiterator=nothing,
                          initial_phases=(0.0,0.0),
-                         phaseiterator=nothing,                 
                          noiserate=5000, 
                          nsave=0,
                          saveat=[],
                          saveinplane=false,
                          downsample=1,
                          phaseonly=false)
-    Bnoise = B1*noiseratio
+
     tspan = (0.0, tend)
     
     if nsave == 0 && length(saveat) == 0 && !saveinplane
@@ -80,23 +87,21 @@ function run_simulations(tend, n;
     if nsave != 0
         saveat = range(tspan[1], tspan[2], length=nsave)
     end
+    B0_iterator = make_stateful(B0, Real)
+    B1_iterator = make_stateful(B1, Real)
+    phaseiterator = make_stateful(initial_phases, Tuple)
     
-    if phaseiterator == nothing
-        phaseiterator = Iterators.repeated(initial_phases)
-    end
     if noiseiterator == nothing
         noiseiterator = NoiseIterator(Bnoise, tspan[2]-tspan[1], noiserate; filtercutoff=filtercutoff, uppercutoff=uppercutoff, filtertype=filtertype)
     end
-    phaseiterator = Iterators.Stateful(imap(p->state_from_phases(p...),phaseiterator))
-    statefuliterator = Iterators.Stateful(noiseiterator)
+    noiseiterator = Iterators.Stateful(noiseiterator)
     
     function prob_func(prob,i,repeat)
-        # To create different noise instances for each run in a nonstochastic integration
-        #new_noise = makenoise(Bnoise, tspan[2]-tspan[1], noiserate; 
-        #    filtercutoff=filtercutoff, uppercutoff=uppercutoff, filtertype=filtertype)
-        new_noise = popfirst!(statefuliterator)
+        B0 = popfirst!(B0_iterator)
+        B1 = popfirst!(B1_iterator)
+        new_noise = popfirst!(noiseiterator)
         dS = dS_dual(B0, B1, w, neutrongyro, he3gyro; noise_itp=new_noise)
-        u0nh = popfirst!(phaseiterator)
+        u0nh = state_from_phases(popfirst!(phaseiterator)...)
         ODEProblem(dS,u0nh,tspan)
     end
     function just_data_please(sol, i)
