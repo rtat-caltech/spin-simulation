@@ -20,9 +20,12 @@ function phase(a, b; dims=1)
     acos.(clamp.(sum(a .* b, dims=dims)./(anorm .* bnorm), -1.0, 1.0))
 end
 
-function planephase(a)
+function planephase(a; axis=3)
+    # axis: the axis about which the spins precess (1=x, 2=y, 3=z)
     if length(size(a)) == 2
-        return [atan(a[2,i], a[1,i]) for i=1:size(a)[2]]
+        q = (axis % 3) + 1
+        r = ((axis + 1) % 3) + 1
+        return [atan(a[r,i], a[q,i]) for i=1:size(a)[2]]
     elseif length(size(a)) == 3
         x = [planephase(a[:,:,i]) for i=1:size(a, 3)]
         return hcat(x...)

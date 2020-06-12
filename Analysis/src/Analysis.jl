@@ -1,12 +1,12 @@
 module Analysis
-export compare_phase, extract_noise, predict_phase, predict_shift, aggregate_data, simulate_signal
+export compare_phase, extract_noise, predict_phase, predict_shift, aggregate_data, simulate_signal, read_metadata
 using Utils
 using Solve: SpinSolution
 
 using JLD2
 using Statistics
 
-function compare_phase(no_noise, ensemble)
+function compare_phase(no_noise, ensemble; axis=3)
     if length(size(no_noise)) == 1
         ensemble_phase = ensemble
         no_noise_phase = no_noise
@@ -14,8 +14,8 @@ function compare_phase(no_noise, ensemble)
         ensemble_phase = ensemble[1,:,:]
         no_noise_phase = no_noise[1,:]
     else
-        ensemble_phase = planephase(ensemble)
-        no_noise_phase = planephase(no_noise)
+        ensemble_phase = planephase(ensemble; axis=axis)
+        no_noise_phase = planephase(no_noise; axis=axis)
     end
     phase_diff = ensemble_phase .- no_noise_phase
     phase_diff = asin.(sin.(phase_diff)) # Get rid of additive multiples of 2pi
@@ -95,7 +95,9 @@ function aggregate_data(save_dir;
         result[key] = aggregator(result[key], metadata, no_noise_sol, sol)
     end
 
-    for key in keys(result)
+    keyit = all(isa.(keys(result), Number)) ? sort(collect(keys(result))) : keys(result)
+
+    for key in sort(collect(keys(result)))
         result[key] = postprocess(key, result[key])
     end
     result
@@ -134,4 +136,9 @@ function predict_shift(t, gamma; B1=4.0596741e-1, noiseratio=1e-4, noiserate=500
     end
 end
 
+function read_metadata(save_dir)
+    # Ignores all data, just prints metadata
+    aggregate_data(save_dir, selector=m->(println(m)==nothing && false))
+    return nothing
+end
 end

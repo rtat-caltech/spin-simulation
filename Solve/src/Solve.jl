@@ -104,7 +104,7 @@ function run_simulations(tend, n;
         u0nh = state_from_phases(popfirst!(phaseiterator)...)
         ODEProblem(dS,u0nh,tspan)
     end
-    function just_data_please(sol, i)
+    function just_data(sol, i)
         # If I don't do this, the program stores the interpolated noise function
         # as well, which takes up memory.
         (sol.t, hcat(sol.u...)), false
@@ -113,7 +113,7 @@ function run_simulations(tend, n;
     #prob = prob_func(nothing, 0, 0)
     prob = nothing
     cb = saveinplane ? ContinuousCallback((u,t,integ)->u[3],integ->nothing,save_positions=(true,false)) : nothing
-    output_func = phaseonly ? (sol, i)->((sol.t, planephase(sol; smoothing=false)), false) : just_data_please
+    output_func = phaseonly ? (sol, i)->((sol.t, planephase(sol; smoothing=false)), false) : just_data
     ensembleprob = EnsembleProblem(prob, prob_func=prob_func, output_func=output_func)
     solution = solve(ensembleprob, Tsit5(), EnsembleThreads(), saveat=saveat, dense=false, callback=cb, 
         trajectories=n, abstol=1e-10, reltol=1e-10, maxiters=1e8, save_everystep=false)
