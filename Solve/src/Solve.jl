@@ -9,6 +9,7 @@ export neutrongyro, he3gyro, crit_params
 export SpinSolution
 export run_simulations
 export NoiseIterator
+export makenoise
 
 using Utils
 

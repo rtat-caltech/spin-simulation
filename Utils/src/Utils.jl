@@ -1,8 +1,9 @@
 module Utils
-export phase, planephase, smooth, file_paths, save_data, load_data
+export phase, planephase, smooth, file_paths, save_data, load_data, dressed_gamma
 
 using Dates
 using JLD2
+using LinearAlgebra
 
 function smooth(x, n; smoothtype="mean")
     if smoothtype == "mean"
@@ -55,5 +56,55 @@ function load_data(save_path)
     @load dp no_noise_sol sol
     @load mp metadata
     return no_noise_sol, sol, metadata
+end
+
+function dressed_gamma(B0,Bdress,wdress,gamma,E0,dn; option=false)
+    #This functions calculates the effective gyromagnetic ratio in an strong RF
+    #field with angular frequency wdress
+    #with a uniform B0 & E field as a perturbation. wdress is an angular frequency.  
+    #B0 & Bdress are in Gauss; gamma is the gyromagnetic ratio
+    #dn is EDM in ecm; E0 is an E field in V/cm.
+
+    Bd=Bdress
+    wd=wdress
+    hbar=6.582122E-16; #hbar in eVs
+    #gamma=20378.9;     #gryomagnetic ratio rad/G
+    gammaE=2*dn/hbar;  #gryoelectric ratio rad/(V/cm)  
+    #wd=6000
+    #B0=0.03
+    #E0=-75E3;  #kV/cm
+    #Bd=.37505920;        #Best number for 6000 according to simulations!
+    x=gamma*Bd/wd
+    y=gammaE*E0/wd+gamma*B0/wd
+
+    N = 20
+    Hsd = nothing
+    if option
+        v0 = collect(Iterators.flatten(zip(1:N, 1:N))) # [y, y, 2y, 2y, 3y, 3y, ...]
+        v1 = ((1:2*N-1) .% 2) .* y/2 # alternates [y/2, 0, y/2, ...]
+        v2 = (((1:2*N-2) .% 2) .* x/2) .- x/4 # alternates [+x/4, -x/4, +, - ...]
+        Hsd = diagm(0=>v0, 1=>v1, -1=>v1, 2=>v2, -2=>v2)
+    else
+        #Hsdd1=N+y/2:-1:1+y/2
+        #Hsdd2=N-y/2:-1:1-y/2
+        Hsdd1=(1:N).+y/2
+        Hsdd2=(1:N).-y/2
+
+        Hsdd=sort(-vcat(Hsdd1,Hsdd2))
+        Hsdd=-Hsdd
+        Hsdp=diagm(Hsdd)
+        Hsd=Hsdp
+
+        for i = 1:size(Hsdp,1)
+            for j = 1:size(Hsdp,2)
+                if (i+j-5)%(4)==0 && abs(i-j)<=4
+                    Hsd[i,j]=x/4
+                end
+            end
+        end
+    end
+
+    delE=diff(eigen(Hsd).values)
+    delE[convert(Int, size(Hsd, 1)/2-1)]*wd/B0
 end
 end

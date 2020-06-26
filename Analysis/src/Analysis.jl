@@ -1,10 +1,11 @@
 module Analysis
 export compare_phase, extract_noise, predict_phase, predict_shift, aggregate_data, simulate_signal, read_metadata
 using Utils
-using Solve: SpinSolution
+using Solve
 
 using JLD2
 using Statistics
+using SpecialFunctions
 
 function compare_phase(no_noise, ensemble; axis=3)
     if length(size(no_noise)) == 1
@@ -47,6 +48,11 @@ function extract_noise(sol::SpinSolution; noisetype="phase", nsmooth=1, smoothty
         y = sol.u[2,:,:]
         z = sol.u[3,:,:]
         noise = sqrt.(var(x, dims=2) + var(y, dims=2) + var(z, dims=2))[:,1]
+    elseif noisetype == "meandot"
+        noise = 1 .- mean(sum(sol.u[1:3,:,:] .* sol.u[4:6,:,:], dims=1)[1,:,:], dims=2)[:,1]
+    elseif noisetype == "diffspread"
+        diff = sol.u[1:3,:,:] .- sol.u[4:6,:,:]
+        noise = sqrt.(var(diff[1,:,:], dims=2) + var(diff[2,:,:], dims=2) + var(diff[3,:,:], dims=2))
     elseif noisetype == "npolarization"
         av = mean(sol.u[1:3,:,:], dims=3)
         noise = [norm(av[:,i]) for i=1:size(av, 2)]
@@ -104,9 +110,9 @@ function aggregate_data(save_dir;
 end
 
 function predict_phase(t; 
-        B0=crit_dress_params["B0"],
-        B1=crit_dress_params["B1"],
-        w=crit_dress_params["w"],
+        B0=crit_params["B0"],
+        B1=crit_params["B1"],
+        w=crit_params["w"],
         noiseratio=1e-4, 
         noiserate=5000, 
         filtercutoff=0.0)
@@ -126,13 +132,25 @@ function predict_phase(t;
     return sqrt(sigma_w0^2 + sigma_rf^2) .* sqrt.(t)
 end
 
-function predict_shift(t, gamma; B1=4.0596741e-1, noiseratio=1e-4, noiserate=5000, filtercutoff=0.0)
-    f_res = 60.
+function predict_shift(t, gamma;
+                       B0=crit_params["B0"],
+                       B1=crit_params["B1"],
+                       w=crit_params["w"],
+                       noiseratio=1e-4,
+                       noiserate=5000,
+                       filtercutoff=0.0,
+                       noiseratecorrection=true)
+    f_res_0 = abs(gamma * B0)/(2*pi) * besselj(0, gamma * B1/w)
+    f_res = dressed_gamma(B0,B1,w,gamma,0,0)*B0/(2*pi)
     if filtercutoff == 0.0
         return 0.0 .* t
     else
         sigma = B1 * noiseratio/sqrt(noiserate)
-        return -gamma^2/(4*pi) * sigma^2 * log((filtercutoff+f_res)/(filtercutoff-f_res)) .* t
+        cutoff_factor = log((filtercutoff+f_res)/(filtercutoff-f_res))
+        if noiseratecorrection
+            cutoff_factor -= log((noiserate/2 + f_res)/(noiserate/2 - f_res))
+        end
+        return -gamma^2/(4*pi) * sigma^2 * cutoff_factor .* t
     end
 end
 
