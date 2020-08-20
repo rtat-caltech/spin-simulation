@@ -10,6 +10,7 @@ export SpinSolution
 export run_simulations
 export NoiseIterator
 export makenoise
+export daq_noise_iterator
 
 using Utils
 
@@ -22,6 +23,7 @@ using DSP
 using Interpolations
 using SpecialFunctions
 using IterTools
+using MAT
 
 const neutrongyro = -1.83247172e4
 const he3gyro = -2.037894585e4
@@ -71,8 +73,8 @@ function run_simulations(tend, n;
                          uppercutoff=0.0,
                          filtertype=Elliptic(7, 1, 60),
                          noiseiterator=nothing,
+                         noiserate=5000,
                          initial_phases=(0.0,0.0),
-                         noiserate=5000, 
                          nsave=0,
                          saveat=[],
                          saveinplane=false,
