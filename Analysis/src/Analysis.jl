@@ -123,13 +123,23 @@ function predict_phase(t;
     w0 = besselj(0, neutrongyro * B1/w) * wn
     J1_n = besselj(1, neutrongyro * B1/w)
     J1_3 = besselj(1, he3gyro * B1/w)
-    
+    J2_n = besselj(2, neutrongyro * B1/w)
+    J2_3 = besselj(2, he3gyro * B1/w)
+    J3_n = besselj(3, neutrongyro * B1/w)
+    J3_3 = besselj(3, he3gyro * B1/w)
+    J4_n = besselj(4, neutrongyro * B1/w)
+    J4_3 = besselj(4, he3gyro * B1/w)
+
+    # Square root of PSD of noise field
     sigma = B1 * noiseratio/sqrt(noiserate)
     
-    sigma_w0 = wcutoff < w0 ? abs(neutrongyro - he3gyro) * sigma/sqrt(2) : 0
-    sigma_rf = true ? abs(neutrongyro * J1_n * wn - he3gyro * J1_3 * w3) * sqrt(2) * sigma/w : 0
-    
-    return sqrt(sigma_w0^2 + sigma_rf^2) .* sqrt.(t)
+    sigma_w0 = wcutoff < w0 ? 1/2 * abs(neutrongyro - he3gyro) * sigma : 0
+    sigma_rf = wcutoff < w ? abs(neutrongyro * J1_n * wn - he3gyro * J1_3 * w3)  * sigma/w : 0
+    sigma_2w = wcutoff < 2*w ? sqrt(2)/4 * abs(neutrongyro * J2_n * wn - he3gyro * J2_3 * w3) * sigma/w : 0
+    sigma_3w = wcutoff < 3*w ? 1/3 * abs(neutrongyro * J3_n * wn - he3gyro * J3_3 * w3)  * sigma/w : 0
+    sigma_4w = sqrt(2)/8 * abs(neutrongyro * J4_n * wn - he3gyro * J4_3 * w3)  * sigma/w    
+
+    return sqrt(sigma_w0^2 + sigma_rf^2 + sigma_2w^2 + sigma_3w^2 + sigma_4w^2) .* sqrt.(t) .* sqrt(2)
 end
 
 function predict_shift(t, gamma;
