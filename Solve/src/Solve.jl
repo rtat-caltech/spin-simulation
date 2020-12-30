@@ -38,9 +38,14 @@ end
 
 include("noisegeneration.jl")
 
+function dS_dual(B0, B1::Real, w, gyro1, gyro2; noise_itp=t->0)
+    dS_dual(B0, t->B1*cos(w*t), w, gyro1, gyro2; noise_itp=noise_itp)
+end
+
 function dS_dual(B0, B1, w, gyro1, gyro2; noise_itp=t->0)
+    Bxfunc = t -> B1(t)+noise_itp(t)
     function dS(du, u, p, t)
-        Bx = B1*cos(w*t)+noise_itp(t)
+        Bx = Bxfunc(t)
         By = 0
         Bz = B0
         du[1] = gyro1 * (u[2]*Bz - u[3]*By)
@@ -64,9 +69,14 @@ function make_stateful(arg, type)
     end
 end
 
+function preprocess(solu, downsample)
+    return normalize(hcat(solu...)[:,1:downsample:end])
+end
+
 function run_simulations(tend, n; 
                          B0=crit_params["B0"], 
                          B1=crit_params["B1"],
+                         B1_func=nothing,
                          w=crit_params["w"],
                          Bnoise=crit_params["B1"]*1e-4,
                          filtercutoff=0.0,
@@ -79,7 +89,7 @@ function run_simulations(tend, n;
                          saveat=[],
                          saveinplane=false,
                          downsample=1,
-                         phaseonly=false)
+                         output_type="bloch")
 
     tspan = (0.0, tend)
     
@@ -98,32 +108,42 @@ function run_simulations(tend, n;
         noiseiterator = NoiseIterator(Bnoise, tspan[2]-tspan[1], noiserate; filtercutoff=filtercutoff, uppercutoff=uppercutoff, filtertype=filtertype)
     end
     noiseiterator = Iterators.Stateful(noiseiterator)
-    
+
+    info_array = []
     function prob_func(prob,i,repeat)
         B0 = popfirst!(B0_iterator)
         B1 = popfirst!(B1_iterator)
         new_noise = popfirst!(noiseiterator)
-        dS = dS_dual(B0, B1, w, neutrongyro, he3gyro; noise_itp=new_noise)
+        if B1_func == nothing
+            dS = dS_dual(B0, B1, w, neutrongyro, he3gyro; noise_itp=new_noise)
+        else
+            dS = dS_dual(B0, t->B1*B1_func(t), w, neutrongyro, he3gyro; noise_itp=new_noise)
+        end
         u0nh = state_from_phases(popfirst!(phaseiterator)...)
         ODEProblem(dS,u0nh,tspan)
-    end
-    function just_data(sol, i)
-        # If I don't do this, the program stores the interpolated noise function
-        # as well, which takes up memory.
-        (sol.t, hcat(sol.u...)), false
     end
 
     #prob = prob_func(nothing, 0, 0)
     prob = nothing
     cb = saveinplane ? ContinuousCallback((u,t,integ)->u[3],integ->nothing,save_positions=(true,false)) : nothing
-    output_func = phaseonly ? (sol, i)->((sol.t, planephase(sol; smoothing=false)), false) : just_data
+
+    if output_type == "bloch"
+        output_func = (sol, i)->((sol.t, preprocess(sol.u, downsample)), false)
+    elseif output_type == "phase"
+        output_func = (sol, i)->((sol.t, planephase(preprocess(sol.u, downsample))), false)
+    elseif output_type == "signal"
+        output_func = (sol, i)->((sol.t, signal(preprocess(sol.u, downsample))), false)
+    end
+    
     ensembleprob = EnsembleProblem(prob, prob_func=prob_func, output_func=output_func)
-    solution = solve(ensembleprob, Tsit5(), EnsembleThreads(), saveat=saveat, dense=false, callback=cb, 
+    solution = solve(ensembleprob, Tsit5(), EnsembleSerial(), saveat=saveat, dense=false, callback=cb, 
         trajectories=n, abstol=1e-10, reltol=1e-10, maxiters=1e8, save_everystep=false)
-    u_sim = phaseonly ? transpose([pair[2] for pair=solution]) : [pair[2] for pair=solution]
+    u_sim = output_type == "bloch" ? [pair[2] for pair=solution] : transpose([pair[2] for pair=solution])
     if length(saveat) == 0
         saveat = solution[1][1]
     end
-    return SpinSolution(saveat[1:downsample:end], cat(u_sim..., dims=3)[:,1:downsample:end,:])
+    
+    return SpinSolution(saveat[1:downsample:end], cat(u_sim..., dims=3))
+    #return SpinSolution(saveat[1:downsample:end], normalize(cat(u_sim..., dims=3)[:,1:downsample:end,:]))
 end
 end

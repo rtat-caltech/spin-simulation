@@ -53,9 +53,10 @@ function trim_cycles(data, w, fs)
     # Trims the end of the data so that
     # The data contains an integer number of cycles
     # of angular frequency w
-    T = 2*pi/w # Period
+    #T = 2*pi/w # Period
+    T = 2*pi/w
     tf = (length(data)-1)/fs
-    data[1:round(Int, (tf - (tf % T))*fs)+1]
+    data[1:round(Int, (tf - (tf % T))*fs)]
 end
 
 function mat_has_key(f, key)
@@ -83,14 +84,14 @@ function compute_normalization(fnames; w=crit_params["w"], trim=1, fs=daq_rate)
         data = trim_cycles(data, w, fs)
         t = (0:length(data)-1)/fs
         x = data .- mean(data)
-        a1, a2 = fit_sine(x, t, w)
+        a1, a2 = fit_sine(cumsum(x), t, w)
         amp = sqrt(a1^2 + a2^2)
-        total += amp
+        total += amp*(w/fs)
     end
     total/length(fnames)
 end
 
-function preprocess(data, t0;
+function preprocess(data;
                     w=crit_params["w"],
                     filtercutoff=0.0, 
                     filtertype=Elliptic(7, 1, 60),
@@ -99,10 +100,11 @@ function preprocess(data, t0;
     # Filter out DC offsets and drifts
     if filtercutoff != 0.0
         filter = digitalfilter(Highpass(filtercutoff; fs=fs), filtertype)
+        #filter = digitalfilter(Bandpass(filtercutoff, 1500; fs=fs), filtertype)
         data = filt(filter, data)/abs(freqz(filter, w/(2*pi), fs))
     end
     # Cut out glitches
-    res = data[round(Int, t0*fs):end-round(Int, trim*fs)]
+    res = data[round(Int, trim*fs):end-round(Int, trim*fs)]
     # Try to get an integer number of cycles
     trim_cycles(res, w, fs)
 end
@@ -124,26 +126,34 @@ function make_waveform(fname, duration, norm;
     file = matopen(fname)
     record_len = round(Int, duration*fs)+1
     data = read(file, "data")[:,1]
-    tend = length(data)/fs
-    t0 = (rand() * (tend-2*trim-duration)) + trim
     sig = cumsum(data)*w/fs
-    sig = preprocess(sig, t0;
+    sig = preprocess(sig;
                      w=w,
                      filtercutoff=filtercutoff,
                      filtertype=filtertype,
                      trim=trim,
                      fs=fs)
+
     t = (0:length(sig)-1)/fs
-    sig = B1*(sig .- mean(sig))/norm
     a1, a2 = fit_sine(sig, t, w)
     phi0 = atan(a2, a1)
+    #sig = B1*(sig .- mean(sig))/norm
+    sig = B1*(sig .- mean(sig))/sqrt(a1^2 + a2^2)
+    buffer = 10 # Samples
+    n0 = rand(buffer+1:length(sig)-buffer-record_len+1)
+    phi1 = w*(n0-1)/fs + phi0
     # Now set the phase correctly, so that
     # S(t) = sin(w*t + phase)
-    dn = (fs/w) * mod2pi(phase-phi0) + 1
+    dn = (fs/w) * mod2pi(phase-phi1)
     offset = floor(Int, dn)
-    sig = sig[offset:offset+record_len]
-    time = ((0:length(sig)-1) .- (dn - offset))/fs
-    scale(interpolate(sig, BSpline(Cubic(Line(OnGrid())))), time)
+    sig = sig[n0+offset-buffer:n0+offset+record_len+buffer]
+    time = ((0:length(sig)-1) .- (dn - offset) .- buffer)/fs
+    tmp = (fs/w) * phi0
+    #return scale(interpolate(sig, BSpline(Cubic(Line(OnGrid())))), time)
+    noise = sig .- B1*sin.(w*time .+ phase)
+    noise_itp = scale(interpolate(noise, BSpline(Cubic(Line(OnGrid())))), time)
+    f = t -> B1*sin(w*t + phase) + noise_itp(t)
+    return f
 end
 
 function daq_noise_iterator(directory, duration; 
