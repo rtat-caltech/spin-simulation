@@ -1,6 +1,6 @@
 module Analysis
 export compare_phase, extract_noise, extract_signal
-export predict_signal_std, predict_phase, predict_shift, predict_polarization
+export predict_signal_std, predict_phase, predict_shift, predict_polarization, predict_signal_variance
 export aggregate_data, read_metadata, get_random_metadata
 using Utils
 using Solve
@@ -9,6 +9,8 @@ using JLD2
 using Statistics
 using SpecialFunctions
 using LinearAlgebra
+using Rotations
+using StaticArrays
 
 function compare_phase(no_noise, ensemble; axis=3)
     if length(size(no_noise)) == 1
@@ -23,47 +25,44 @@ function compare_phase(no_noise, ensemble; axis=3)
     end
     phase_diff = ensemble_phase .- no_noise_phase
     phase_diff = asin.(sin.(phase_diff)) # Get rid of additive multiples of 2pi
-    if length(size(phase_diff)) == 2
-        return mean(phase_diff, dims=2)[:,1], std(phase_diff, dims=2)[:,1]
-    else
-        return phase_diff, nothing
-    end
+    return phase_diff
 end
 
 function extract_signal(sol::SpinSolution)
     return signal(sol.u)
 end
 
-function extract_noise(sol::SpinSolution; noisetype="phase", nsmooth=1, smoothtype="mean")
+function extract_noise(sol::SpinSolution; noisetype="phase", nsmooth=1, smoothtype="mean", runs=:)
     t = sol.t
+    u = sol.u[:,:,runs]
     noise = nothing
     if noisetype == "phase"
-        noise = std(phase(sol.u[1:3,:,:], sol.u[4:6,:,:])[1,:,:], dims=2)
+        noise = std(phase(u[1:3,:,:], u[4:6,:,:])[1,:,:], dims=2)
     elseif noisetype == "x"
-        noise = std(sol.u[1,:,:] - sol.u[4,:,:], dims=2)[:,1]
+        noise = std(u[1,:,:] - u[4,:,:], dims=2)[:,1]
     elseif noisetype == "y"
-        noise = std(sol.u[2,:,:] - sol.u[5,:,:], dims=2)[:,1]
+        noise = std(u[2,:,:] - u[5,:,:], dims=2)[:,1]
     elseif noisetype == "z"
-        noise = std(sol.u[3,:,:] - sol.u[6,:,:], dims=2)[:,1]
+        noise = std(u[3,:,:] - u[6,:,:], dims=2)[:,1]
     elseif noisetype == "nspread"
-        x = sol.u[1,:,:]
-        y = sol.u[2,:,:]
-        z = sol.u[3,:,:]
+        x = u[1,:,:]
+        y = u[2,:,:]
+        z = u[3,:,:]
         noise = (var(x, dims=2) + var(y, dims=2) + var(z, dims=2))[:,1]
     elseif noisetype == "signal"
         # smooth before taking variance
         noise = var(smooth_2d(extract_signal(sol), nsmooth), dims=2)
         return sol.t[1:length(t)-(nsmooth-1)], noise
     elseif noisetype == "meandot"
-        noise = mean(sum(sol.u[1:3,:,:] .* sol.u[4:6,:,:], dims=1)[1,:,:], dims=2)[:,1]
+        noise = mean(sum(u[1:3,:,:] .* u[4:6,:,:], dims=1)[1,:,:], dims=2)[:,1]
     elseif noisetype == "diffspread"
-        diff = sol.u[1:3,:,:] .- sol.u[4:6,:,:]
+        diff = u[1:3,:,:] .- u[4:6,:,:]
         noise = sqrt.(var(diff[1,:,:], dims=2) + var(diff[2,:,:], dims=2) + var(diff[3,:,:], dims=2))
     elseif noisetype == "npolarization"
-        av = mean(sol.u[1:3,:,:], dims=3)
+        av = mean(u[1:3,:,:], dims=3)
         noise = [norm(av[:,i]) for i=1:size(av, 2)]
     elseif noisetype == "hepolarization"
-        av = mean(sol.u[4:6,:,:], dims=3)
+        av = mean(u[4:6,:,:], dims=3)
         noise = [norm(av[:,i]) for i=1:size(av, 2)]
     else
         error("Unknown noisetype $noisetype")
@@ -113,6 +112,47 @@ function aggregate_data(save_dir;
         result[key] = postprocess(key, result[key])
     end
     result
+end
+
+function predict_signal_variance(t;
+                                 gamma1=neutrongyro,
+                                 gamma2=he3gyro,
+                                 phi1=pi/2, # Spin-1 phase
+                                 phi2=0, # Spin-2 phase
+                                 theta=0, # B-field phase
+                                 B0=crit_params["B0"],
+                                 B1=crit_params["B1"],
+                                 w=crit_params["w"],
+                                 Bnoise=crit_params["B1"]*1e-4,
+                                 noiserate=5000,
+                                 filtercutoff=0.0)    
+    wcutoff = filtercutoff * 2 * pi
+
+    w1 = abs(gamma1 * B0)
+    x1 = gamma1 * B1/w
+    w2 = abs(gamma2 * B0)
+    x2 = gamma2 * B1/w
+    w0 = besselj(0, gamma1 * B1/w) * w1
+
+    xhat = SVector(1, 0, 0)
+    zhat = SVector(0, 0, 1)
+    b1 = RotX(sin(theta) * x1) * RotZ(phi1) * xhat
+    b2 = RotX(sin(theta) * x2) * RotZ(phi2) * xhat
+
+    geom_cross = norm(cross(zhat, cross(b1, b2)))^2
+    geom_dot = dot(zhat, cross(b1, b2))^2
+
+    # Square root of PSD of noise field
+    sigma = Bnoise/sqrt(noiserate)
+
+    rev_t = sigma^2/2 # re(v)/t
+
+    v_w0 = wcutoff < w0 ? 1 * geom_cross * (gamma1 - gamma2)^2 * rev_t : 0
+    v_rf = wcutoff < w ? 4 * geom_dot * ((gamma1 * besselj(1, x1) * w1 - gamma2 * besselj(1, x2) * w2)/w)^2 * rev_t : 0
+    v_2w = wcutoff < 2*w ? 1/2 * geom_cross * ((gamma1 * besselj(2, x1) * w1 - gamma2 * besselj(2, x2) * w2)/w)^2 * rev_t : 0
+    v_3w = wcutoff < 3*w ? 4/9 * geom_dot * ((gamma1 * besselj(3, x1) * w1 - gamma2 * besselj(3, x2) * w2)/w)^2 * rev_t : 0
+
+    (v_w0 + v_rf + v_2w + v_3w) .* t
 end
 
 function predict_signal_std(t;
@@ -223,8 +263,8 @@ function predict_polarization(t, gamma;
     v_w0 = wcutoff < w0 ? 1/2 * gamma^2 * rev_t : 0
     v_rf = wcutoff < w ? 2 * (gamma * besselj(1, xn) * wn/w)^2 * rev_t : 0
     v_2w = wcutoff < 2*w ? 2 * 1/8 * (gamma * besselj(2, xn) * wn/w)^2 * rev_t : 0 # 2w+w_0' and 2w-w_0'
-    v_3w = wcutoff < 3*w ? 1 * (gamma * besselj(3, xn) * wn/w)^2 * rev_t : 0
-    v_4w = 1 * (gamma * besselj(4, xn) * wn/w)^2 * rev_t
+    v_3w = wcutoff < 3*w ? 2/9 * (gamma * besselj(3, xn) * wn/w)^2 * rev_t : 0
+    v_4w = 2 * 1/32 * (gamma * besselj(4, xn) * wn/w)^2 * rev_t
 
     1 - (v_w0 + v_rf + v_2w + v_3w + v_4w) .* t
 end
