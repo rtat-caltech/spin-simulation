@@ -6,7 +6,7 @@ using FFTW
     Bnoise::Float64
     duration::Float64
     noiserate::Float64
-    filtercutoff::Float64
+    lowercutoff::Float64
     uppercutoff::Float64
     filtertype
     repeat::Int = 1
@@ -17,15 +17,15 @@ keyname = "dataBuffer";
 function Base.iterate(iter::NoiseIterator, state=(0, nothing))
     if state[1] % iter.repeat == 0
         noise = makenoise(iter.Bnoise, iter.duration, iter.noiserate; 
-            filtercutoff=iter.filtercutoff, uppercutoff=iter.uppercutoff, filtertype=iter.filtertype)
+            lowercutoff=iter.lowercutoff, uppercutoff=iter.uppercutoff, filtertype=iter.filtertype)
         return noise, (state[1]+1, noise)
     else
         return state[2], (state[1]+1, state[2])
     end
 end
 
-function NoiseIterator(rms, t, noiserate; filtercutoff=0.0, uppercutoff=0.0, filtertype=Elliptic(7, 1, 60), repeat=1)
-    return NoiseIterator(rms, t, noiserate, filtercutoff, uppercutoff, filtertype, repeat)
+function NoiseIterator(rms, t, noiserate; lowercutoff=0.0, uppercutoff=0.0, filtertype=Elliptic(7, 1, 60), repeat=1)
+    return NoiseIterator(rms, t, noiserate, lowercutoff, uppercutoff, filtertype, repeat)
 end
 
 function perfect_filter(sample, lower, upper, fs)
@@ -40,24 +40,24 @@ function perfect_filter(sample, lower, upper, fs)
     return irfft(y, length(sample))
 end
 
-function makenoise(rms, t, noiserate; filtercutoff=0.0, uppercutoff=0.0, filtertype=Elliptic(7, 1, 60))
+function makenoise(rms, t, noiserate; lowercutoff=0.0, uppercutoff=0.0, filtertype=Elliptic(7, 1, 60))
     dt = 1.0/noiserate
     tarr = range(0, t+dt, step=dt)
     pts = rms*randn(length(tarr))
 
-    if filtercutoff == 0.0 && uppercutoff == 0.0
+    if lowercutoff == 0.0 && uppercutoff == 0.0
         filtered_pts = pts
     elseif filtertype isa String
         if lowercase(filtertype) != "perfect"
             throw(ErrorException("filtertype not recognized"))
         end
-        filtered_pts = perfect_filter(pts, filtercutoff, uppercutoff, noiserate)
+        filtered_pts = perfect_filter(pts, lowercutoff, uppercutoff, noiserate)
     elseif uppercutoff == 0.0
-        filtered_pts = filt(digitalfilter(Highpass(filtercutoff; fs=noiserate), filtertype), pts)
-    elseif filtercutoff == 0.0
+        filtered_pts = filt(digitalfilter(Highpass(lowercutoff; fs=noiserate), filtertype), pts)
+    elseif lowercutoff == 0.0
         filtered_pts = filt(digitalfilter(Lowpass(uppercutoff; fs=noiserate), filtertype), pts)
     else
-        filtered_pts = filt(digitalfilter(Bandpass(filtercutoff, uppercutoff; fs=noiserate), filtertype), pts)
+        filtered_pts = filt(digitalfilter(Bandpass(lowercutoff, uppercutoff; fs=noiserate), filtertype), pts)
     end
     return scale(interpolate(filtered_pts, BSpline(Cubic(Line(OnGrid())))), tarr)
 end
@@ -118,14 +118,14 @@ end
 
 function preprocess(data;
                     w=crit_params["w"],
-                    filtercutoff=0.0, 
+                    lowercutoff=0.0, 
                     filtertype=Elliptic(7, 1, 60),
                     trim=0.5,
                     fs=daq_rate)
     # Filter out DC offsets and drifts
-    if filtercutoff != 0.0
-        filter = digitalfilter(Highpass(filtercutoff; fs=fs), filtertype)
-        #filter = digitalfilter(Bandpass(filtercutoff, 1500; fs=fs), filtertype)
+    if lowercutoff != 0.0
+        filter = digitalfilter(Highpass(lowercutoff; fs=fs), filtertype)
+        #filter = digitalfilter(Bandpass(lowercutoff, 1500; fs=fs), filtertype)
         data = filt(filter, data)/abs(freqz(filter, w/(2*pi), fs))
     end
     # Cut out glitches
@@ -143,7 +143,7 @@ function make_waveform(data, duration, norm;
                        phase=pi/2,
                        B1=crit_params["B1"],
                        w=crit_params["w"], 
-                       filtercutoff=0.0, 
+                       lowercutoff=0.0, 
                        filtertype=Elliptic(7, 1, 60),
                        trim=0.5,
                        fs=daq_rate,
@@ -158,7 +158,7 @@ function make_waveform(data, duration, norm;
     sig = cumsum(data)*w/fs
     sig = preprocess(sig;
                      w=w,
-                     filtercutoff=filtercutoff,
+                     lowercutoff=lowercutoff,
                      filtertype=filtertype,
                      trim=trim,
                      fs=fs)
@@ -219,7 +219,7 @@ end
 function daq_noise_iterator(directory, duration; 
         B1=crit_params["B1"], 
         w=crit_params["w"], 
-        filtercutoff=0.0, 
+        lowercutoff=0.0, 
         filtertype=Elliptic(7, 1, 60),
         trim=0.5,
         fs=daq_rate)
@@ -240,7 +240,7 @@ function daq_noise_iterator(directory, duration;
                                 phase=pi/2,
                                 B1=B1,                          
                                 w=w,
-                                filtercutoff=filtercutoff,
+                                lowercutoff=lowercutoff,
                                 filtertype=filtertype,
                                 trim=trim,
                                 fs=fs), filtered_data_iterator)

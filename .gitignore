@@ -1,9 +1,6 @@
 *~
 *.npy
-figures
-data
-power-supply-data
-*.jld2
 *.png
-*.ipynb
 *.m
+examples/data
+examples/.ipynb_checkpoints

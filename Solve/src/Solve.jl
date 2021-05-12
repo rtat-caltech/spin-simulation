@@ -88,8 +88,7 @@ function make_stateful(arg, type)
 end
 
 function preprocess(solu, downsample)
-    #return normalize(hcat(solu...)[:,1:downsample:end])
-    return hcat(solu...)[:,1:downsample:end]
+    return normalize(hcat(solu...)[:,1:downsample:end])
 end
 
 function run_simulations(tend, n; 
@@ -98,7 +97,7 @@ function run_simulations(tend, n;
                          B1_func=nothing,
                          w=crit_params["w"],
                          Bnoise=crit_params["B1"]*1e-4,
-                         filtercutoff=0.0,
+                         lowercutoff=0.0,
                          uppercutoff=0.0,
                          filtertype=Elliptic(7, 1, 60),
                          noiseiterator=nothing,
@@ -125,7 +124,7 @@ function run_simulations(tend, n;
     phaseiterator = make_stateful(initial_phases, Tuple)
     
     if noiseiterator == nothing
-        noiseiterator = NoiseIterator(Bnoise, tspan[2]-tspan[1], noiserate; filtercutoff=filtercutoff, uppercutoff=uppercutoff, filtertype=filtertype)
+        noiseiterator = NoiseIterator(Bnoise, tspan[2]-tspan[1], noiserate; lowercutoff=lowercutoff, uppercutoff=uppercutoff, filtertype=filtertype)
     end
     noiseiterator = Iterators.Stateful(noiseiterator)
     
@@ -163,7 +162,7 @@ function run_simulations(tend, n;
     end
 
     ensembleprob = EnsembleProblem(prob, prob_func=prob_func, output_func=output_func)
-    solution = solve(ensembleprob, Tsit5(), EnsembleSerial(), saveat=saveat, dense=false, callback=cb, 
+    solution = solve(ensembleprob, Tsit5(), EnsembleThreads(), saveat=saveat, dense=false, callback=cb, 
                      trajectories=n, abstol=1e-10, reltol=1e-10, maxiters=1e8, save_everystep=false)
     
     u_sim = output_type == "bloch" ? [pair[2] for pair=solution] : transpose([pair[2] for pair=solution])
@@ -172,6 +171,5 @@ function run_simulations(tend, n;
     end
     
     return SpinSolution(saveat[1:downsample:end], cat(u_sim..., dims=3))
-    #return SpinSolution(saveat[1:downsample:end], normalize(cat(u_sim..., dims=3)[:,1:downsample:end,:]))
 end
 end

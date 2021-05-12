@@ -125,8 +125,8 @@ function predict_signal_variance(t;
                                  w=crit_params["w"],
                                  Bnoise=crit_params["B1"]*1e-4,
                                  noiserate=5000,
-                                 filtercutoff=0.0)    
-    wcutoff = filtercutoff * 2 * pi
+                                 lowercutoff=0.0)    
+    wcutoff = lowercutoff * 2 * pi
 
     w1 = abs(gamma1 * B0)
     x1 = gamma1 * B1/w
@@ -155,47 +155,15 @@ function predict_signal_variance(t;
     (v_w0 + v_rf + v_2w + v_3w) .* t
 end
 
-function predict_signal_std(t;
-                            theta=pi/2,
-                            B0=crit_params["B0"],
-                            B1=crit_params["B1"],
-                            w=crit_params["w"],
-                            Bnoise=crit_params["B1"]*1e-4,
-                            noiserate=5000,
-                            filtercutoff=0.0)
-    wcutoff = filtercutoff * 2 * pi
-    wn = abs(neutrongyro * B0)
-    w3 = abs(he3gyro * B0)
-    w0 = besselj(0, neutrongyro * B1/w) * wn
-    J1_n = besselj(1, neutrongyro * B1/w)
-    J1_3 = besselj(1, he3gyro * B1/w)
-    J2_n = besselj(2, neutrongyro * B1/w)
-    J2_3 = besselj(2, he3gyro * B1/w)
-    J3_n = besselj(3, neutrongyro * B1/w)
-    J3_3 = besselj(3, he3gyro * B1/w)
-    J4_n = besselj(4, neutrongyro * B1/w)
-    J4_3 = besselj(4, he3gyro * B1/w)
-
-    # Square root of PSD of noise field
-    sigma = Bnoise/sqrt(noiserate)
-    
-    sigma_w0 = wcutoff < w0 ? 0 : 0
-    sigma_rf = wcutoff < 1*w ? sqrt(2)*abs(neutrongyro * J1_n * wn - he3gyro * J1_3 * w3) * sigma/w * abs(sin(theta)) : 0
-    sigma_2w = wcutoff < 2*w ? 0 : 0
-    sigma_3w = 1/3 * abs(neutrongyro * J3_n * wn - he3gyro * J3_3 * w3) * sigma/w
-
-    return sqrt(sigma_w0^2 + sigma_rf^2 + sigma_2w^2 + sigma_3w^2) .* sqrt.(t)
-end
-
 function predict_phase(t; 
         B0=crit_params["B0"],
         B1=crit_params["B1"],
         w=crit_params["w"],
         Bnoise=crit_params["B1"]*1e-4,
         noiserate=5000, 
-        filtercutoff=0.0)
+        lowercutoff=0.0)
     
-    wcutoff = filtercutoff * 2 * pi
+    wcutoff = lowercutoff * 2 * pi
     wn = abs(neutrongyro * B0)
     w3 = abs(he3gyro * B0)
     w0 = besselj(0, neutrongyro * B1/w) * wn
@@ -226,15 +194,15 @@ function predict_shift(t, gamma;
                        w=crit_params["w"],
                        Bnoise=crit_params["B1"]*1e-4,
                        noiserate=5000,
-                       filtercutoff=0.0,
+                       lowercutoff=0.0,
                        noiseratecorrection=true)
     f_res_0 = abs(gamma * B0)/(2*pi) * besselj(0, gamma * B1/w)
     f_res = dressed_gamma(B0,B1,w,gamma,0,0)*B0/(2*pi)
-    if filtercutoff == 0.0
+    if lowercutoff == 0.0
         return 0.0 .* t
     else
         sigma = Bnoise/sqrt(noiserate)
-        cutoff_factor = log((filtercutoff+f_res)/(filtercutoff-f_res))
+        cutoff_factor = log((lowercutoff+f_res)/(lowercutoff-f_res))
         if noiseratecorrection
             cutoff_factor -= log((noiserate/2 + f_res)/(noiserate/2 - f_res))
         end
@@ -248,9 +216,9 @@ function predict_polarization(t, gamma;
                               w=crit_params["w"],
                               Bnoise=crit_params["B1"]*1e-4,
                               noiserate=5000,
-                              filtercutoff=0.0,
+                              lowercutoff=0.0,
                               noiseratecorrection=true)
-    wcutoff = filtercutoff * 2 * pi
+    wcutoff = lowercutoff * 2 * pi
     wn = abs(gamma * B0)
     xn = gamma * B1/w
     w0 = besselj(0, xn) * wn
