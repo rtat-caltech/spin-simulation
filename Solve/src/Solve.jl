@@ -75,6 +75,39 @@ function dS_signal(B0, B1, w, gyro1, gyro2; noise_itp=t->0)
     end
 end
 
+
+function dS_general(B0, B1, w, gyro1, gyro2, Bxfunc, Byfunc, Bzfunc)
+    function dS(du, u, p, t)
+        Bx = Bxfunc(t) + B1 * cos(w*t)
+        By = Byfunc(t)
+        Bz = Bzfunc(t) + B0
+        du[1] = gyro1 * (u[2]*Bz - u[3]*By)
+        du[2] = gyro1 * (u[3]*Bx - u[1]*Bz)
+        du[3] = gyro1 * (u[1]*By - u[2]*Bx)
+        du[4] = gyro2 * (u[5]*Bz - u[6]*By)
+        du[5] = gyro2 * (u[6]*Bx - u[4]*Bz)
+        du[6] = gyro2 * (u[4]*By - u[5]*Bx)
+    end
+end
+
+function dS_general_signal(B0, B1, w, gyro1, gyro2, Bxfunc, Byfunc, Bzfunc)
+    function dS(du, u, p, t)
+        Bx = Bxfunc(t) + B1 * cos(w*t)
+        By = Byfunc(t)
+        Bz = Bzfunc(t) + B0
+        du[1] = gyro1 * (u[2]*Bz - u[3]*By)
+        du[2] = gyro1 * (u[3]*Bx - u[1]*Bz)
+        du[3] = gyro1 * (u[1]*By - u[2]*Bx)
+        du[4] = gyro2 * (u[5]*Bz - u[6]*By)
+        du[5] = gyro2 * (u[6]*Bx - u[4]*Bz)
+        du[6] = gyro2 * (u[4]*By - u[5]*Bx)
+        anorm = u[1]^2 + u[2]^2 + u[3]^2
+        bnorm = u[4]^2 + u[5]^2 + u[6]^2
+        du[7] = (u[1]*u[4]+u[2]*u[5]+u[3]*u[6])/sqrt(anorm*bnorm)
+    end
+end
+
+
 function state_from_phases(phi1, phi2)
     [cos(phi1), sin(phi1), 0.0, cos(phi2), sin(phi2), 0.0]
 end
