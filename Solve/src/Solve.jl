@@ -22,6 +22,7 @@ using DSP
 using Interpolations
 using SpecialFunctions
 using IterTools
+using Base.Iterators
 using MAT
 
 const neutrongyro = -1.83247172e4
@@ -34,51 +35,9 @@ const crit_params = Dict("B0"=>0.050, "B1"=>4.0289106454828055e-1, "w"=>6283.185
 
 include("noisegeneration.jl")
 
-function dS_dual(B0, B1::Real, w, gyro1, gyro2; noise_itp=t->0)
-    dS_dual(B0, t->B1*cos(w*t), w, gyro1, gyro2; noise_itp=noise_itp)
-end
-
-function dS_dual(B0, B1, w, gyro1, gyro2; noise_itp=t->0)
-    Bxfunc = t -> B1(t)+noise_itp(t)
-    function dS(du, u, p, t)
-        Bx = Bxfunc(t)
-        By = 0
-        Bz = B0
-        du[1] = gyro1 * (u[2]*Bz - u[3]*By)
-        du[2] = gyro1 * (u[3]*Bx - u[1]*Bz)
-        du[3] = gyro1 * (u[1]*By - u[2]*Bx)
-        du[4] = gyro2 * (u[5]*Bz - u[6]*By)
-        du[5] = gyro2 * (u[6]*Bx - u[4]*Bz)
-        du[6] = gyro2 * (u[4]*By - u[5]*Bx)
-    end
-end
-
-function dS_signal(B0, B1::Real, w, gyro1, gyro2; noise_itp=t->0)
-    dS_signal(B0, t->B1*cos(w*t), w, gyro1, gyro2; noise_itp=noise_itp)
-end
-
-function dS_signal(B0, B1, w, gyro1, gyro2; noise_itp=t->0)
-    Bxfunc = t -> B1(t)+noise_itp(t)
-    function dS(du, u, p, t)
-        Bx = Bxfunc(t)
-        By = 0
-        Bz = B0
-        du[1] = gyro1 * (u[2]*Bz - u[3]*By)
-        du[2] = gyro1 * (u[3]*Bx - u[1]*Bz)
-        du[3] = gyro1 * (u[1]*By - u[2]*Bx)
-        du[4] = gyro2 * (u[5]*Bz - u[6]*By)
-        du[5] = gyro2 * (u[6]*Bx - u[4]*Bz)
-        du[6] = gyro2 * (u[4]*By - u[5]*Bx)
-        anorm = u[1]^2 + u[2]^2 + u[3]^2
-        bnorm = u[4]^2 + u[5]^2 + u[6]^2
-        du[7] = (u[1]*u[4]+u[2]*u[5]+u[3]*u[6])/sqrt(anorm*bnorm)
-    end
-end
-
-
 function dS_general(B0, B1, w, gyro1, gyro2, Bxfunc, Byfunc, Bzfunc)
     function dS(du, u, p, t)
-        Bx = Bxfunc(t) + B1 * cos(w*t)
+        Bx = Bxfunc(t) + B1*cos(w*t)
         By = Byfunc(t)
         Bz = Bzfunc(t) + B0
         du[1] = gyro1 * (u[2]*Bz - u[3]*By)
@@ -92,7 +51,7 @@ end
 
 function dS_general_signal(B0, B1, w, gyro1, gyro2, Bxfunc, Byfunc, Bzfunc)
     function dS(du, u, p, t)
-        Bx = Bxfunc(t) + B1 * cos(w*t)
+        Bx = Bxfunc(t) + B1*cos(w*t)
         By = Byfunc(t)
         Bz = Bzfunc(t) + B0
         du[1] = gyro1 * (u[2]*Bz - u[3]*By)
@@ -114,32 +73,27 @@ end
 
 function make_stateful(arg, type)
     if arg isa type
-        return Iterators.Stateful(Iterators.repeated(arg))
+        return Iterators.Stateful(repeated(arg))
     else
         return Iterators.Stateful(arg)
     end
 end
 
-function preprocess(solu, downsample)
-    return normalize(hcat(solu...)[:,1:downsample:end])
+function preprocess(solu)
+    return normalize(hcat(solu...))
 end
 
 function run_simulations(tend, n; 
                          B0=crit_params["B0"], 
                          B1=crit_params["B1"],
-                         B1_func=nothing,
                          w=crit_params["w"],
-                         Bnoise=crit_params["B1"]*1e-4,
-                         lowercutoff=0.0,
-                         uppercutoff=0.0,
-                         filtertype=Elliptic(7, 1, 60),
-                         noiseiterator=nothing,
-                         noiserate=5000,
+                         Bxfunc=repeated(t->0),
+                         Byfunc=repeated(t->0),
+                         Bzfunc=repeated(t->0),
                          initial_phases=(0.0,0.0),
                          nsave=0,
                          saveat=[],
                          saveinplane=false,
-                         downsample=1,
                          output_type="bloch",
                          compute_signal=false)
 
@@ -152,46 +106,39 @@ function run_simulations(tend, n;
     if nsave != 0
         saveat = range(tspan[1], tspan[2], length=nsave)
     end
-    B0_iterator = make_stateful(B0, Real)
-    B1_iterator = make_stateful(B1, Real)
-    phaseiterator = make_stateful(initial_phases, Tuple)
+
+    Bxfunc = Iterators.Stateful(Bxfunc)
+    Byfunc = Iterators.Stateful(Byfunc)
+    Bzfunc = Iterators.Stateful(Bzfunc)
     
-    if noiseiterator == nothing
-        noiseiterator = NoiseIterator(Bnoise, tspan[2]-tspan[1], noiserate; lowercutoff=lowercutoff, uppercutoff=uppercutoff, filtertype=filtertype)
-    end
-    noiseiterator = Iterators.Stateful(noiseiterator)
-    
-    info_array = []
     function prob_func(prob,i,repeat)
-        B0 = popfirst!(B0_iterator)
-        B1 = popfirst!(B1_iterator)
-        new_noise = popfirst!(noiseiterator)
-        B1_param = B1_func == nothing ? B1 : t->B1*B1_func(t)
+        Bx = popfirst!(Bxfunc)
+        By = popfirst!(Byfunc)
+        Bz = popfirst!(Bzfunc)
         if compute_signal
-            dS = dS_signal(B0, B1_param, w, neutrongyro, he3gyro; noise_itp=new_noise)
-            u0nh = push!(state_from_phases(popfirst!(phaseiterator)...), 0)
+            dS = dS_general_signal(B0, B1, w, neutrongyro, he3gyro, Bx, By, Bz)
+            u0nh = push!(state_from_phases(initial_phases...), 0)
         else
-            dS = dS_dual(B0, B1_param, w, neutrongyro, he3gyro; noise_itp=new_noise)
-            u0nh = state_from_phases(popfirst!(phaseiterator)...)            
+            dS = dS_general(B0, B1, w, neutrongyro, he3gyro, Bx, By, Bz)
+            u0nh = state_from_phases(initial_phases...)
         end
         ODEProblem(dS,u0nh,tspan)
     end
 
-    #prob = prob_func(nothing, 0, 0)
     prob = nothing
     cb = saveinplane ? ContinuousCallback((u,t,integ)->u[3],integ->nothing,save_positions=(true,false)) : nothing
 
     if output_type == "bloch"
-        output_func = (sol, i)->((sol.t, preprocess(sol.u, downsample)), false)
+        output_func = (sol, i)->((sol.t, preprocess(sol.u)), false)
     elseif output_type == "phase"
-        output_func = (sol, i)->((sol.t, planephase(preprocess(sol.u, downsample))), false)
+        output_func = (sol, i)->((sol.t, planephase(preprocess(sol.u))), false)
     elseif output_type == "signal"
-        output_func = (sol, i)->((sol.t, signal(preprocess(sol.u, downsample))), false)
+        output_func = (sol, i)->((sol.t, signal(preprocess(sol.u))), false)
     elseif output_type == "signal_int"
         if !compute_signal
             throw(ArgumentError("In order to compute integrated signal, compute_signal must be set to true"))
         end
-        output_func = (sol, i)->((sol.t, preprocess(sol.u, downsample)[7,:,:]), false)
+        output_func = (sol, i)->((sol.t, preprocess(sol.u)[7,:,:]), false)
     end
 
     ensembleprob = EnsembleProblem(prob, prob_func=prob_func, output_func=output_func)
@@ -203,6 +150,6 @@ function run_simulations(tend, n;
         saveat = solution[1][1]
     end
     
-    return SpinSolution(saveat[1:downsample:end], cat(u_sim..., dims=3))
+    return SpinSolution(saveat, cat(u_sim..., dims=3))
 end
 end
