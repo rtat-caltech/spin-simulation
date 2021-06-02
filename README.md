@@ -9,7 +9,8 @@ This is Julia code primarily used to study critical spin dressing for nEDM@SNS. 
     The most important methods to know are aggregate_data and extract_noise.
     
 Aside from these two, there are two other packages:
-3. Utils: Various utility methods.
+
+3. Utils: Various utility methods
 4. Visualizations: A tool for visualizing the results produced by Solve (see SpinSolverAnalysis.ipynb example script).
 
 See the example scripts for more info.
