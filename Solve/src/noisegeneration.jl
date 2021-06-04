@@ -234,7 +234,7 @@ function daq_noise_iterator(directory, duration;
     #raw_data_iterator = imap(i->data_from_file(rand(fnames)), countfrom())
     raw_data_iterator = imap(f->data_from_file(f), cycle(fnames))
     
-    filtered_data_iterator = filter(d->waveform_is_ok(d, fs), raw_data_iterator)
+    filtered_data_iterator = Iterators.filter(d->waveform_is_ok(d, fs), raw_data_iterator)
 
     it0 = imap(d->make_waveform(d, duration, norm;
                                 phase=pi/2,

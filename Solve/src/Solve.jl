@@ -79,7 +79,7 @@ function make_stateful(arg, type)
     end
 end
 
-function preprocess(solu)
+function postprocess(solu)
     return normalize(hcat(solu...))
 end
 
@@ -129,16 +129,16 @@ function run_simulations(tend, n;
     cb = saveinplane ? ContinuousCallback((u,t,integ)->u[3],integ->nothing,save_positions=(true,false)) : nothing
 
     if output_type == "bloch"
-        output_func = (sol, i)->((sol.t, preprocess(sol.u)), false)
+        output_func = (sol, i)->((sol.t, postprocess(sol.u)), false)
     elseif output_type == "phase"
-        output_func = (sol, i)->((sol.t, planephase(preprocess(sol.u))), false)
+        output_func = (sol, i)->((sol.t, planephase(postprocess(sol.u))), false)
     elseif output_type == "signal"
-        output_func = (sol, i)->((sol.t, signal(preprocess(sol.u))), false)
+        output_func = (sol, i)->((sol.t, signal(postprocess(sol.u))), false)
     elseif output_type == "signal_int"
         if !compute_signal
             throw(ArgumentError("In order to compute integrated signal, compute_signal must be set to true"))
         end
-        output_func = (sol, i)->((sol.t, preprocess(sol.u)[7,:,:]), false)
+        output_func = (sol, i)->((sol.t, postprocess(sol.u)[7,:,:]), false)
     end
 
     ensembleprob = EnsembleProblem(prob, prob_func=prob_func, output_func=output_func)
@@ -149,7 +149,6 @@ function run_simulations(tend, n;
     if length(saveat) == 0
         saveat = solution[1][1]
     end
-    
     return SpinSolution(saveat, cat(u_sim..., dims=3))
 end
 end
