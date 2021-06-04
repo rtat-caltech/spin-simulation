@@ -1,0 +1,19 @@
+version: "3.9"
+
+services:
+  spin-sim:
+    image: rtat/spin-simulation:ijulia
+    ports:
+      - 8888:8888
+    volumes:
+      - ./Solve:${WDIR}/Solve
+      - ./Analysis:${WDIR}/Analysis
+      - ./Utils:${WDIR}/Utils
+      - ./Visualizations:${WDIR}/Visualizations
+      - notebook-data:${WDIR}/examples
+    environment:
+      JUPYTER_ENABLE_LAB: 1
+
+
+volumes:
+  notebook-data:
