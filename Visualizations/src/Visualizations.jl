@@ -3,7 +3,6 @@ using Plots
 using LinearAlgebra
 using Statistics
 using Utils
-using ColorSchemes
 
 export determine_axes, get_quivers, blochplot
 
