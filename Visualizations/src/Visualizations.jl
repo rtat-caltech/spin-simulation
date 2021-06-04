@@ -81,8 +81,8 @@ end
 
 function get_quivers(frame, xaxis, yaxis, scale)
     meanvec = unit(mean(frame, dims=2))[:,1]
-    v1 = cross([0; 0; 1], meanvec).*scale
-    v2 = cross(meanvec, v1)
+    v1 = cross([0; 0; 1], meanvec).*scale #East
+    v2 = cross(meanvec, v1) #North
     xv, yv = project([v1 v2], xaxis, yaxis)
     xv, yv
 end
