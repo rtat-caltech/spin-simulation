@@ -14,3 +14,11 @@ Aside from these two, there are two other packages:
 4. Visualizations: A tool for visualizing the results produced by Solve (see SpinSolverAnalysis.ipynb example script).
 
 See the example scripts for more info.
+
+## Using Docker
+This code can be run using Docker.
+1. Install Docker and Docker Compose at https://docs.docker.com/get-docker/.
+2. Clone this github repository.
+3. From the top-level of this repository (i.e. the directory containing docker-compose.yml), run `docker-compose up`. This will spin up a container and start a Jupyter notebook server.
+4. To stop the server, enter `Ctrl + c` in the command line.
+5. To shut down the container, run `docker-compose down`.
