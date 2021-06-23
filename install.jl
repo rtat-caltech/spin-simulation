@@ -21,5 +21,6 @@ pkg"add IJulia"
 pkg"add Revise"
 pkg"add Parameters"
 pkg"add Plots"
+pkg"add Optim"
 
 pkg"precompile"
