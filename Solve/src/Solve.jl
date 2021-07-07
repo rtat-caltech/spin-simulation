@@ -90,6 +90,7 @@ function run_simulations(tend, n;
                          Bxfunc=repeated(t->0),
                          Byfunc=repeated(t->0),
                          Bzfunc=repeated(t->0),
+                         Bfunc=nothing,
                          initial_phases=(0.0,0.0),
                          nsave=0,
                          saveat=[],
@@ -110,11 +111,16 @@ function run_simulations(tend, n;
     Bxfunc = Iterators.Stateful(Bxfunc)
     Byfunc = Iterators.Stateful(Byfunc)
     Bzfunc = Iterators.Stateful(Bzfunc)
+    Bfunc = Iterators.Stateful(Bfunc)
     
     function prob_func(prob,i,repeat)
-        Bx = popfirst!(Bxfunc)
-        By = popfirst!(Byfunc)
-        Bz = popfirst!(Bzfunc)
+        if Bfunc == nothing
+            Bx = popfirst!(Bxfunc)
+            By = popfirst!(Byfunc)
+            Bz = popfirst!(Bzfunc)
+        else
+            Bx, By, Bz = popfirst!(Bfunc)
+        end
         if compute_signal
             dS = dS_general_signal(B0, B1, w, neutrongyro, he3gyro, Bx, By, Bz)
             u0nh = push!(state_from_phases(initial_phases...), 0)

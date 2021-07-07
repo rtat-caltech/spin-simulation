@@ -14,6 +14,10 @@ end
 
 keyname = "dataBuffer";
 
+##################
+# Filtered Noise #
+##################
+
 function Base.iterate(iter::NoiseIterator, state=(0, nothing))
     if state[1] % iter.repeat == 0
         noise = makenoise(iter.Bnoise, iter.duration, iter.noiserate; 
@@ -40,6 +44,16 @@ function perfect_filter(sample, lower, upper, fs)
     return irfft(y, length(sample))
 end
 
+function interp(t, pts; interpolation="cubic")
+    # returns a continuous function by interpolating discrete points
+    if interpolation == "cubic"
+        itp = BSpline(Cubic(Line(OnGrid())))
+    elseif interpolation == "linear"
+        itp = BSpline(Linear())
+    end
+    return scale(interpolate(pts, itp), t)
+end
+
 function makenoise(rms, t, noiserate; lowercutoff=0.0, uppercutoff=0.0, filtertype=Elliptic(7, 1, 60))
     dt = 1.0/noiserate
     tarr = range(0, t+dt, step=dt)
@@ -59,8 +73,24 @@ function makenoise(rms, t, noiserate; lowercutoff=0.0, uppercutoff=0.0, filterty
     else
         filtered_pts = filt(digitalfilter(Bandpass(lowercutoff, uppercutoff; fs=noiserate), filtertype), pts)
     end
-    return scale(interpolate(filtered_pts, BSpline(Cubic(Line(OnGrid())))), tarr)
+    return interp(tarr, filtered_pts, interpolation="cubic")
 end
+
+########################
+# Noise from Gradients #
+########################
+
+function spatial_noise(tarr, xpts, ypts, zpts, gradients)
+    Bpts = gradients * [xpts; ypts; zpts]
+    Bxfunc = interp(tarr, Bpts[1,:]; interpolation="linear")
+    Byfunc = interp(tarr, Bpts[2,:]; interpolation="linear")
+    Bzfunc = interp(tarr, Bpts[3,:]; interpolation="linear")    
+    return Bxfunc, Byfunc, Bzfunc
+end
+
+###################
+# Noise from File #
+###################
 
 # Functions to read waveforms from files
 daq_rate = 46875
@@ -192,7 +222,7 @@ function make_waveform(data, duration, norm;
     offset = floor(Int, dn)
     sig = sig[n0+offset-buffer:n0+offset+record_len+buffer]
     time = ((0:length(sig)-1) .- (dn - offset) .- buffer)/fs
-    return scale(interpolate(sig, BSpline(Cubic(Line(OnGrid())))), time)
+    return interp(time, sig; interpolation="cubic")
 end
 
 function waveform_is_ok(data, fs)
