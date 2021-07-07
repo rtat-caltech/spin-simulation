@@ -1,9 +1,3 @@
-@userplot BlochQuivers
-@recipe function f(bq::BlochQuivers)
-    frame, xaxis, yaxis = bq.args
-    meanvec = unit(mean(frame, dims=2))[:,1]
-end
-
 @userplot BlochScatter
 @recipe function f(bs::BlochScatter)
     frame, xaxis, yaxis, axlim = bs.args
