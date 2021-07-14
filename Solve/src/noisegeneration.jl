@@ -18,6 +18,10 @@ keyname = "dataBuffer";
 # Filtered Noise #
 ##################
 
+function filterednoise(rms, t, noiserate; lowercutoff=0.0, uppercutoff=0.0, filtertype=Elliptic(7, 1, 60), repeat=1)
+    return NoiseIterator(rms, t, noiserate, lowercutoff, uppercutoff, filtertype, repeat)
+end
+
 function Base.iterate(iter::NoiseIterator, state=(0, nothing))
     if state[1] % iter.repeat == 0
         noise = makenoise(iter.Bnoise, iter.duration, iter.noiserate; 
@@ -26,10 +30,6 @@ function Base.iterate(iter::NoiseIterator, state=(0, nothing))
     else
         return state[2], (state[1]+1, state[2])
     end
-end
-
-function NoiseIterator(rms, t, noiserate; lowercutoff=0.0, uppercutoff=0.0, filtertype=Elliptic(7, 1, 60), repeat=1)
-    return NoiseIterator(rms, t, noiserate, lowercutoff, uppercutoff, filtertype, repeat)
 end
 
 function perfect_filter(sample, lower, upper, fs)
@@ -80,13 +80,37 @@ end
 # Noise from Gradients #
 ########################
 
-function spatial_noise(tarr, xpts, ypts, zpts, gradients)
-    Bpts = gradients * [xpts; ypts; zpts]
+include("particleTrajectory.jl")
+
+function createtrajectory(duration, dt)
+    p = createStructure()
+    startInside!(p)
+    times = 0:dt:duration
+    positions = zeros(Float64, (3, length(times)))
+    for i=1:length(times)
+        positions[:,i] = p.pos
+        moveParticle!(dt,p)
+    end
+    return positions
+end
+
+function bfieldgradient(tarr, positions, gradients)
+    Bpts = gradients * positions
     Bxfunc = interp(tarr, Bpts[1,:]; interpolation="linear")
     Byfunc = interp(tarr, Bpts[2,:]; interpolation="linear")
     Bzfunc = interp(tarr, Bpts[3,:]; interpolation="linear")    
     return Bxfunc, Byfunc, Bzfunc
 end
+
+function spatialnoise(gradients, duration, noiserate)
+    times = 0:1/noiserate:duration
+    function f(x)
+        positions = createtrajectory(duration, 1/noiserate)
+        return bfieldgradient(times, positions, gradients)
+    end
+    Iterators.map(f, Iterators.repeated(nothing)) # Hack to make an iterator that goes forever
+end
+
 
 ###################
 # Noise from File #
@@ -246,7 +270,7 @@ function waveform_is_ok(data, fs)
     return true
 end
 
-function daq_noise_iterator(directory, duration; 
+function daqnoise(directory, duration; 
         B1=crit_params["B1"], 
         w=crit_params["w"], 
         lowercutoff=0.0, 

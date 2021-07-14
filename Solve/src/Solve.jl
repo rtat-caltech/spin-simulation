@@ -9,7 +9,7 @@ export neutrongyro, he3gyro, crit_params
 export run_simulations
 export NoiseIterator
 export makenoise
-export daq_noise_iterator
+export filterednoise, spatialnoise, daqnoise
 
 using Utils
 
@@ -111,7 +111,9 @@ function run_simulations(tend, n;
     Bxfunc = Iterators.Stateful(Bxfunc)
     Byfunc = Iterators.Stateful(Byfunc)
     Bzfunc = Iterators.Stateful(Bzfunc)
-    Bfunc = Iterators.Stateful(Bfunc)
+    if Bfunc != nothing
+        Bfunc = Iterators.Stateful(Bfunc)
+    end
     
     function prob_func(prob,i,repeat)
         if Bfunc == nothing
