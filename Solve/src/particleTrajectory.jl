@@ -25,7 +25,7 @@ mutable struct FreeFallParticle <: AbstractParticle
     oldseed::Int
 end
 
-function creatStructure()
+function createStructure()
     p = FreeFallParticle([0.0,0.0,0.0],[0.0,0.0,0.0],[0.0,0.0,0.0],[0.0,0.0,0.0], 0.0,0.0,0.0,0.0,1,1,1,1)
 
     return p;
