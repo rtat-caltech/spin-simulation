@@ -7,7 +7,6 @@ const vmax=5;
 using StaticArrays
 using LinearAlgebra: dot, normalize
 const SV = SVector{3,Float64} # We're working in 3D space here, folks.
-const pi = 3.141592653589793
 
 abstract type AbstractParticle end
 
@@ -24,31 +23,25 @@ mutable struct FreeFallParticle <: AbstractParticle
     oldwhatwall::Int
     seed::Int
     oldseed::Int
-
 end
 
-#function move!(p::FreeFallParticle, dt)
-#    p.pos = p.pos + p.vel * dt
-#end
 function creatStructure()
     p = FreeFallParticle([0.0,0.0,0.0],[0.0,0.0,0.0],[0.0,0.0,0.0],[0.0,0.0,0.0], 0.0,0.0,0.0,0.0,1,1,1,1)
 
     return p;
-    
 end
 
 function getIsotropic!(floor,ceiling,p::FreeFallParticle)
-#returns height of particle from Golub's UCN book, distribution from equation 4.7. (althought this is not 100% correct due to parabolic arcs)
- #stores the v^2 distributed from maximum velocity. 
+    #returns height of particle from Golub's UCN book, distribution from equation 4.7. (althought this is not 100% correct due to parabolic arcs)
+    #stores the v^2 distributed from maximum velocity. 
     #not sure if this really works with the sphere, but its probably pretty good.
     vmax=4.0;
     L = ceiling-floor
-     #hard v^2 distribution. at the lowest point in the geometry (ergodicity assumed)
+    #hard v^2 distribution. at the lowest point in the geometry (ergodicity assumed)
 	
     vmag=vmax*cbrt(rand(Float64))
-
 	
-	if vmag*vmag>2.0*gravity*L
+    if vmag*vmag>2.0*gravity*L
     	vfactor=sqrt(1.0-L*gravity/vmag/vmag)
     	#height= 0.5/gravity*(vmag*vmag-cbrt(( (vfactor*((vmag)^3-L*gravity*vmag) + (vmag)^3 )^2*rand(Float64) + (vmag)^3)))   
         rn=rand(Float64);
@@ -57,27 +50,17 @@ function getIsotropic!(floor,ceiling,p::FreeFallParticle)
     	height=0.5/gravity*vmag*vmag*(1-cbrt((rand(Float64))^2))
     end
 
-    #correct for bad luck and rounding errors... height starts below zero.
-    if height < 0.0
-            height=0.0
-    end
-     
-
-    #correct for bad luck and round errors 2... height starts above ceiling.
-      if height+floor>ceiling
-            height=ceiling
-      end
-        
+    height = clamp(height, 0.0, L)
      
     #magnitude of the ::SV juliavelocity at the height  
     #(it is possible that this populates velocities in places that the neutron cannot replicate from diffuse wall collisions alone, but it should be good enough. )
-	vmagh=sqrt(vmag*vmag-2.0*gravity*height)
-	thetap=acos(2.0*rand(Float64)-1.);
+    vmagh=sqrt(vmag*vmag-2.0*gravity*height)
+    thetap=acos(2.0*rand(Float64)-1.);
     phip= 2.0*pi*rand(Float64);
     #velocity components adjusted for height. 
-	p.vel=[vmagh*sin(thetap)*cos(phip),vmagh*sin(thetap)*sin(phip),vmagh*cos(thetap)];
-	#return in geometry coordinates
-	return height+floor;
+    p.vel=SV(vmagh*sin(thetap)*cos(phip),vmagh*sin(thetap)*sin(phip),vmagh*cos(thetap));
+    #return in geometry coordinates
+    return height+floor;
 end
 
 
@@ -90,7 +73,7 @@ function startInside!(p::FreeFallParticle)
     
     positionz=getIsotropic!(-0.5*zheight,0.5*zheight,p);
     
-    p.oldpos=[positionx,positiony,positionz];
+    p.oldpos=SV(positionx,positiony,positionz);
         
     p.pos=p.oldpos;
 
@@ -100,30 +83,21 @@ function startInside!(p::FreeFallParticle)
 end
 
 
-
-
-
 function nextBoundary!(p::FreeFallParticle)
-    positionx=p.pos[1];
-    positiony=p.pos[2];
-    positionz=p.pos[3];
-        
-    velocityx=p.vel[1];
-    velocityy=p.vel[2];
-    velocityz=p.vel[3];
-	#this may look similar to the z walls in the cylinder, but its different.
+    positionx, positiony, positionz = p.pos
+    velocityx, velocityy, velocityz = p.vel
+
+    #this may look similar to the z walls in the cylinder, but its different.
     #+-zwall=z0+vz*twall-1/2*g*twall^2
     #why so much harder in julia?
     if velocityz*velocityz+2.0*(positionz-zheight/2.0)*gravity > 0
        
         twalltop=(velocityz-sqrt(velocityz*velocityz+2.0*(positionz-zheight/2.0)*gravity))/gravity;
        
-         if velocityz*velocityz+2.0*(positionz+zheight/2.0)*gravity > 0
-        
-    
+        if velocityz*velocityz+2.0*(positionz+zheight/2.0)*gravity > 0
+            
             twallbott=(velocityz+sqrt(velocityz*velocityz+2.0*(positionz+zheight/2.0)*gravity))/gravity;
-    
-    
+            
             if twalltop <0.0
                 twalltemp2=twallbott
             elseif twallbott<0.0
@@ -131,7 +105,7 @@ function nextBoundary!(p::FreeFallParticle)
             elseif twallbott<twalltop
                 twalltemp2=twallbott
             else
-            twalltemp2=twalltop
+                twalltemp2=twalltop
             end
         else
             twalltemp2=twalltop;
@@ -141,8 +115,8 @@ function nextBoundary!(p::FreeFallParticle)
     end
             
 
-    twalltemp0=(xwidth/2.0-sgn(velocityx)*positionx)/(sgn(velocityx)*velocityx);
-    twalltemp1=(ylength/2.0-sgn(velocityy)*positiony)/(sgn(velocityy)*velocityy);
+    twalltemp0=(xwidth/2.0-sign(velocityx)*positionx)/(sign(velocityx)*velocityx);
+    twalltemp1=(ylength/2.0-sign(velocityy)*positiony)/(sign(velocityy)*velocityy);
    
     #goofball logic.
     if twalltemp2<=twalltemp1
@@ -179,18 +153,14 @@ end
 function moveParticle!(dt,p::FreeFallParticle)
  
     if p.time+dt<p.twall
-
-        p.pos=[p.pos[1]+p.vel[1]*dt,p.pos[2]+p.vel[2]*dt,p.pos[3]+p.vel[3]*dt];
-        
-        p.vel=[p.vel[1],p.vel[2],p.vel[3]-gravity*dt];
+        p.pos = p.pos .+ (p.vel .* dt)
+        p.vel = p.vel .+ SV(0, 0, -gravity*dt)
         p.time=p.time+dt;
-            #recursive until no wall is hit. 
+        #recursive until no wall is hit. 
         return; #the actual exit is here at the beginning
     end
 
     dtwall=p.twall-p.time;
-
-
 
     positionx=p.pos[1]+p.vel[1]*dtwall;
     positiony=p.pos[2]+p.vel[2]*dtwall;
@@ -202,100 +172,87 @@ function moveParticle!(dt,p::FreeFallParticle)
     whatwall=p.whatwall;
     twall=p.twall;
 
-	#what wall is a c++ private class variable (how do you do this fast in Julia?, lots of overhead?)
-	if whatwall==2
+    #what wall is a c++ private class variable (how do you do this fast in Julia?, lots of overhead?)
+    if whatwall==2
     
-			#might be necessary to clamp to the wall if it hits the corner. 
-   			#position[2]=position[2]>0? length/2.0:-length/2.0;
+	#might be necessary to clamp to the wall if it hits the corner. 
+   	#position[2]=position[2]>0? length/2.0:-length/2.0;
    			
-		if rand(Float64)>diffuse
-		#specular
-			velocityz=-velocityz;
+	if rand(Float64)>diffuse
+	    #specular
+	    velocityz=-velocityz;
         
-		else
-		#diffuse bounce on the ends. whats the cdf of cos(theta)^2*sin(theta) again? theta0=arccos((1-rand)^(1/3))
-		 #ugg someone from boost should write a diffuse ditrbituion code, (they do have an arcsine dist) this is slow. 
-		#maybe template this in a spline for extra speed? lets see how bad it is. 
-		#method one.
+	else
+	    #diffuse bounce on the ends. whats the cdf of cos(theta)^2*sin(theta) again? theta0=arccos((1-rand)^(1/3))
+	    #ugg someone from boost should write a diffuse ditrbituion code, (they do have an arcsine dist) this is slow. 
+	    #maybe template this in a spline for extra speed? lets see how bad it is. 
+	    #method one.
             vmag=sqrt(velocityz*velocityz+velocityx*velocityx+velocityy*velocityy)
             temptheta=acos(cbrt(rand(Float64)))
             tempphi=2.0*pi*rand(Float64)
-		    velocityz=-vmag*sgn(positionz)*cos(temptheta)
-		    velocityx=vmag*sin(temptheta)*cos(tempphi)
-		    velocityy=vmag*sin(temptheta)*sin(tempphi)
-		  
-		
+	    velocityz=-vmag*sign(positionz)*cos(temptheta)
+	    velocityx=vmag*sin(temptheta)*cos(tempphi)
+	    velocityy=vmag*sin(temptheta)*sin(tempphi)	  
         end
-	elseif whatwall==1
-		
-			#might be necessary to clamp to the wall if it hits the corner. 
-   			#position[2]=position[2]>0? length/2.0:-length/2.0;
-   			
-		if rand(Float64)>diffuse
-		#specular
-			
-			velocityy=-velocityy;
-		
-		else
-		#diffuse bounce on the ends. whats the cdf of cos(theta)^2*sin(theta) again? theta0=arccos((1-rand)^(1/3))
-		 #ugg someone from boost should write a diffuse ditrbituion code, (they do have an arcsine dist) this is slow. 
-		#maybe template this in a spline for extra speed? lets see how bad it is. 
-			#method one.
-			vmag=sqrt(velocityz*velocityz+velocityx*velocityx+velocityy*velocityy)
-			temptheta=acos(cbrt(rand(Float64)))
-			tempphi=2.0*pi*rand(Float64)
-		    velocityy=-vmag*sgn(positiony)*cos(temptheta)
-		    velocityx=vmag*sin(temptheta)*cos(tempphi)
-		    velocityz=vmag*sin(temptheta)*sin(tempphi)
-		  
-		
-        end
+    elseif whatwall==1
+	
+	#might be necessary to clamp to the wall if it hits the corner. 
+   	#position[2]=position[2]>0? length/2.0:-length/2.0;
+   	
+	if rand(Float64)>diffuse
+	    #specular
+	    
+	    velocityy=-velocityy;
+	    
 	else
-		
-			#might be necessary to clamp to the wall if it hits the corner. 
-   			#position[2]=position[2]>0? length/2.0:-length/2.0;
-   			
-		if rand(Float64)>diffuse
-		#specular
-			
-			velocityx=-velocityx;
-		
-		else
-		#diffuse bounce on the ends. whats the cdf of cos(theta)^2*sin(theta) again? theta0=arccos((1-rand)^(1/3))
-		 #ugg someone from boost should write a diffuse ditrbituion code, (they do have an arcsine dist) this is slow. 
-		#maybe template this in a spline for extra speed? lets see how bad it is. 
-			
-			vmag=sqrt(velocityz*velocityz+velocityx*velocityx+velocityy*velocityy)
-			temptheta=acos(cbrt(rand(Float64)))
-			tempphi=2.0*pi*rand(Float64)
-		    velocityx=-vmag*sgn(positionx)*cos(temptheta)
-		    velocityy=vmag*sin(temptheta)*cos(tempphi)
-		    velocityz=vmag*sin(temptheta)*sin(tempphi)
-		  
+	    #diffuse bounce on the ends. whats the cdf of cos(theta)^2*sin(theta) again? theta0=arccos((1-rand)^(1/3))
+	    #ugg someone from boost should write a diffuse ditrbituion code, (they do have an arcsine dist) this is slow. 
+	    #maybe template this in a spline for extra speed? lets see how bad it is. 
+	    #method one.
+	    vmag=sqrt(velocityz*velocityz+velocityx*velocityx+velocityy*velocityy)
+	    temptheta=acos(cbrt(rand(Float64)))
+	    tempphi=2.0*pi*rand(Float64)
+	    velocityy=-vmag*sign(positiony)*cos(temptheta)
+	    velocityx=vmag*sin(temptheta)*cos(tempphi)
+	    velocityz=vmag*sin(temptheta)*sin(tempphi)
+	    
+	    
+        end
+    else
+	
+	#might be necessary to clamp to the wall if it hits the corner. 
+   	#position[2]=position[2]>0? length/2.0:-length/2.0;
+   	
+	if rand(Float64)>diffuse
+	    #specular
+	    
+	    velocityx=-velocityx;
+	    
+	else
+	    #diffuse bounce on the ends. whats the cdf of cos(theta)^2*sin(theta) again? theta0=arccos((1-rand)^(1/3))
+	    #ugg someone from boost should write a diffuse ditrbituion code, (they do have an arcsine dist) this is slow. 
+	    #maybe template this in a spline for extra speed? lets see how bad it is. 
+	    
+	    vmag=sqrt(velocityz*velocityz+velocityx*velocityx+velocityy*velocityy)
+	    temptheta=acos(cbrt(rand(Float64)))
+	    tempphi=2.0*pi*rand(Float64)
+	    velocityx=-vmag*sign(positionx)*cos(temptheta)
+	    velocityy=vmag*sin(temptheta)*cos(tempphi)
+	    velocityz=vmag*sin(temptheta)*sin(tempphi)
+	    
         end
    end
 
     #should have new velocity[] and position 
-	#need to update time
-	
-	p.time=twall
-	#maybe we will hit the wall again before dt is over? lets go to infinity and find out!
-	
-    p.pos=[positionx,positiony,positionz];
+    #need to update time
     
-    p.vel=[velocityx,velocityy,velocityz];
-	nextBoundary!(p)
+    p.time=twall
+    #maybe we will hit the wall again before dt is over? lets go to infinity and find out!
+    
+    p.pos=SV(positionx,positiony,positionz)
+    p.vel=SV(velocityx,velocityy,velocityz)
+    nextBoundary!(p)
     moveParticle!(dt-dtwall,p)
-	
-	return#exiting from recursive calls.
-
+    
+    return#exiting from recursive calls.
 end
-
-function sgn(value)
-    if value < 0.0
-        return -1.0
-    else
-        return 1.0
-    end
-end
-
