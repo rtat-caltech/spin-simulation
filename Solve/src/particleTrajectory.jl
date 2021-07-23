@@ -1,11 +1,10 @@
-const gravity= 9.81 #m^2/s
+const gravity= 9.81 #m/s^2
 const zheight= 0.102 #m 
 const xwidth = 0.4
 const ylength= 0.076
 const diffuse=0.01
 const vmax=5;
 using StaticArrays
-using LinearAlgebra: dot, normalize
 const SV = SVector{3,Float64} # We're working in 3D space here, folks.
 
 abstract type AbstractParticle end
@@ -78,7 +77,7 @@ function startInside!(p::FreeFallParticle)
     p.pos=p.oldpos;
 
     p.oldvel=p.vel;
-    
+
     nextBoundary!(p)
 end
 
@@ -153,7 +152,7 @@ end
 function moveParticle!(dt,p::FreeFallParticle)
  
     if p.time+dt<p.twall
-        p.pos = p.pos .+ (p.vel .* dt)
+        p.pos = p.pos .+ (p.vel .* dt) .+ SV(0, 0, -gravity*dt*dt/2)
         p.vel = p.vel .+ SV(0, 0, -gravity*dt)
         p.time=p.time+dt;
         #recursive until no wall is hit. 
@@ -168,7 +167,7 @@ function moveParticle!(dt,p::FreeFallParticle)
 	
     velocityx=p.vel[1];
     velocityy=p.vel[2];
-    velocityz=p.vel[2]-gravity*dtwall;
+    velocityz=p.vel[3]-gravity*dtwall;
     whatwall=p.whatwall;
     twall=p.twall;
 
@@ -248,7 +247,7 @@ function moveParticle!(dt,p::FreeFallParticle)
     
     p.time=twall
     #maybe we will hit the wall again before dt is over? lets go to infinity and find out!
-    
+
     p.pos=SV(positionx,positiony,positionz)
     p.vel=SV(velocityx,velocityy,velocityz)
     nextBoundary!(p)

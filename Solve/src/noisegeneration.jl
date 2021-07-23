@@ -13,6 +13,7 @@ using FFTW
 end
 
 keyname = "dataBuffer";
+const speedoflight = 3e8
 
 ##################
 # Filtered Noise #
@@ -82,31 +83,49 @@ end
 
 include("particleTrajectory.jl")
 
+# The convention for xyz are different in particleTrajectory.jl
+# Make this the identity if that gets fixed someday
+const coordtransform = [
+    1 0 0;
+    0 0 -1;
+    0 1 0;
+]
+
 function createtrajectory(duration, dt)
     p = createStructure()
     startInside!(p)
     times = 0:dt:duration
     positions = zeros(Float64, (3, length(times)))
+    velocities = zeros(Float64, (3, length(times)))
     for i=1:length(times)
         positions[:,i] = p.pos
+        velocities[:,i] = p.vel
         moveParticle!(dt,p)
     end
-    return positions
+    return coordtransform * positions, coordtransform * velocities
 end
 
-function bfieldgradient(tarr, positions, gradients)
-    Bpts = gradients * positions
+function spatialbfield(tarr, positions, velocities, gradients, Efield)
+    # Gradient term + v x E term
+    # Compute cross product as matrix mul
+    Ex, Ey, Ez = Efield
+    Ematrix = [
+        0 Ez -Ey;
+        -Ez 0 Ex;
+        Ey -Ex 0;
+    ] .* (1e4/speedoflight^2)
+    Bpts = (gradients * positions) .+ (Ematrix * velocities)
     Bxfunc = interp(tarr, Bpts[1,:]; interpolation="linear")
     Byfunc = interp(tarr, Bpts[2,:]; interpolation="linear")
-    Bzfunc = interp(tarr, Bpts[3,:]; interpolation="linear")    
+    Bzfunc = interp(tarr, Bpts[3,:]; interpolation="linear")
     return Bxfunc, Byfunc, Bzfunc
 end
 
-function spatialnoise(gradients, duration, noiserate)
+function spatialnoise(gradients, Efield, duration, noiserate)
     times = 0:1/noiserate:duration
     function f(x)
-        positions = createtrajectory(duration, 1/noiserate)
-        return bfieldgradient(times, positions, gradients)
+        positions, velocities = createtrajectory(duration, 1/noiserate)
+        return spatialbfield(times, positions, velocities, gradients, Efield)
     end
     Iterators.map(f, Iterators.repeated(nothing)) # Hack to make an iterator that goes forever
 end
