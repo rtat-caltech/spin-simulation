@@ -1,101 +1,107 @@
-const gravity= 9.81 #m/s^2
-const zheight= 0.102 #m 
-const xwidth = 0.4
-const ylength= 0.076
-const diffuse=0.01
-const vmax=5;
+#const gravity= 9.81 #m/s^2
+#const zheight= 0.102 #m 
+#const xwidth = 0.4
+#const ylength= 0.076
+#const diffuse=0.01
+#const vmax=5;
 using StaticArrays
 const SV = SVector{3,Float64} # We're working in 3D space here, folks.
+const box_defaults = Dict("x"=>0.4, "y"=>0.076, "z"=>0.102, "diffuse"=>0.01, "g"=>9.81)
+
+# Notes to self about the coordinates:
+# 1. B0, B1, and gravity are mutually orthogonal
+# 2. The long axis of the cell is parallel to the neutron beam
+# 3. B0 wires are densest at the beam.
 
 abstract type AbstractParticle end
 
 mutable struct FreeFallParticle <: AbstractParticle
     pos::SV
     vel::SV
-    oldpos::SV
-    oldvel::SV
+    gravity::Float64
     vmax::Float64
     time::Float64
     twall::Float64
-    oldtwall::Float64
     whatwall::Int
-    oldwhatwall::Int
     seed::Int
-    oldseed::Int
+end
+
+abstract type Container end
+
+struct DiffuseBox <: Container
+    x::Float64 # Width
+    y::Float64 # Length
+    z::Float64 # Height
+    diffuse::Float64
 end
 
 function createStructure()
-    p = FreeFallParticle([0.0,0.0,0.0],[0.0,0.0,0.0],[0.0,0.0,0.0],[0.0,0.0,0.0], 0.0,0.0,0.0,0.0,1,1,1,1)
+    p = FreeFallParticle([0.0,0.0,0.0],[0.0,0.0,0.0],0.0,0.0,0.0,0.0,1,1)
 
     return p;
 end
 
-function getIsotropic!(floor,ceiling,p::FreeFallParticle)
+function getIsotropic!(p::FreeFallParticle, db::DiffuseBox)
     #returns height of particle from Golub's UCN book, distribution from equation 4.7. (althought this is not 100% correct due to parabolic arcs)
     #stores the v^2 distributed from maximum velocity. 
     #not sure if this really works with the sphere, but its probably pretty good.
-    vmax=4.0;
+    floor = -db.z/2
+    ceiling = db.z/2
     L = ceiling-floor
     #hard v^2 distribution. at the lowest point in the geometry (ergodicity assumed)
 	
-    vmag=vmax*cbrt(rand(Float64))
+    vmag=p.vmax*cbrt(rand(Float64))
 	
-    if vmag*vmag>2.0*gravity*L
-    	vfactor=sqrt(1.0-L*gravity/vmag/vmag)
-    	#height= 0.5/gravity*(vmag*vmag-cbrt(( (vfactor*((vmag)^3-L*gravity*vmag) + (vmag)^3 )^2*rand(Float64) + (vmag)^3)))   
+    if vmag*vmag>2.0*p.gravity*L
+    	vfactor=sqrt(1.0-L*p.gravity/vmag/vmag)
+    	#height= 0.5/p.gravity*(vmag*vmag-cbrt(( (vfactor*((vmag)^3-L*p.gravity*vmag) + (vmag)^3 )^2*rand(Float64) + (vmag)^3)))   
         rn=rand(Float64);
-        height=(vmag ^ 2 - (-rn * (L * gravity - vmag ^ 2) * sqrt(-L * gravity + vmag ^ 2) - vmag ^ 3 * (rn - 1)) ^ (2//3)) / gravity
+        height=(vmag ^ 2 - (-rn * (L * p.gravity - vmag ^ 2) * sqrt(-L * p.gravity + vmag ^ 2) - vmag ^ 3 * (rn - 1)) ^ (2//3)) / p.gravity
     else
-    	height=0.5/gravity*vmag*vmag*(1-cbrt((rand(Float64))^2))
+    	height=0.5/p.gravity*vmag*vmag*(1-cbrt((rand(Float64))^2))
     end
 
     height = clamp(height, 0.0, L)
      
     #magnitude of the ::SV juliavelocity at the height  
     #(it is possible that this populates velocities in places that the neutron cannot replicate from diffuse wall collisions alone, but it should be good enough. )
-    vmagh=sqrt(vmag*vmag-2.0*gravity*height)
+    vmagh=sqrt(vmag*vmag-2.0*p.gravity*height)
     thetap=acos(2.0*rand(Float64)-1.);
     phip= 2.0*pi*rand(Float64);
-    #velocity components adjusted for height. 
+    #velocity components adjusted for height.
     p.vel=SV(vmagh*sin(thetap)*cos(phip),vmagh*sin(thetap)*sin(phip),vmagh*cos(thetap));
     #return in geometry coordinates
     return height+floor;
 end
 
 
-function startInside!(p::FreeFallParticle)
-    p.time=0.0;
-   
-    positionx=xwidth*(rand(Float64)-0.5);
+function startInside!(p::FreeFallParticle, db::DiffuseBox)
+    positionx=db.x*(rand(Float64)-0.5);
     
-    positiony=ylength*(rand(Float64)-0.5);
+    positiony=db.y*(rand(Float64)-0.5);
     
-    positionz=getIsotropic!(-0.5*zheight,0.5*zheight,p);
-    
-    p.oldpos=SV(positionx,positiony,positionz);
-        
-    p.pos=p.oldpos;
+    positionz=getIsotropic!(p, db);
 
-    p.oldvel=p.vel;
-
-    nextBoundary!(p)
+    p.pos = SV(positionx, positiony, positionz)
+    
+    nextBoundary!(p, db)
 end
 
 
-function nextBoundary!(p::FreeFallParticle)
+function nextBoundary!(p::FreeFallParticle, db::DiffuseBox)
     positionx, positiony, positionz = p.pos
     velocityx, velocityy, velocityz = p.vel
 
     #this may look similar to the z walls in the cylinder, but its different.
     #+-zwall=z0+vz*twall-1/2*g*twall^2
     #why so much harder in julia?
-    if velocityz*velocityz+2.0*(positionz-zheight/2.0)*gravity > 0
+    if velocityz*velocityz+2.0*(positionz-db.z/2.0)*p.gravity > 0
        
-        twalltop=(velocityz-sqrt(velocityz*velocityz+2.0*(positionz-zheight/2.0)*gravity))/gravity;
+        twalltop=(velocityz-sqrt(velocityz*velocityz+2.0*(positionz-db.z/2.0)*p.gravity))/p.gravity;
        
-        if velocityz*velocityz+2.0*(positionz+zheight/2.0)*gravity > 0
+        if velocityz*velocityz+2.0*(positionz+db.z/2.0)*p.gravity > 0
             
-            twallbott=(velocityz+sqrt(velocityz*velocityz+2.0*(positionz+zheight/2.0)*gravity))/gravity;
+            twallbott=(velocityz+sqrt(velocityz*velocityz+2.0*(positionz+db.z/2.0)*p.gravity))/p.gravity;
             
             if twalltop <0.0
                 twalltemp2=twallbott
@@ -110,12 +116,12 @@ function nextBoundary!(p::FreeFallParticle)
             twalltemp2=twalltop;
         end
     else
-        twalltemp2=(velocityz+sqrt(velocityz*velocityz+2.0*(positionz+zheight/2.0)*gravity))/gravity;
+        twalltemp2=(velocityz+sqrt(velocityz*velocityz+2.0*(positionz+db.z/2.0)*p.gravity))/p.gravity;
     end
             
 
-    twalltemp0=(xwidth/2.0-sign(velocityx)*positionx)/(sign(velocityx)*velocityx);
-    twalltemp1=(ylength/2.0-sign(velocityy)*positiony)/(sign(velocityy)*velocityy);
+    twalltemp0=(db.x/2.0-sign(velocityx)*positionx)/(sign(velocityx)*velocityx);
+    twalltemp1=(db.y/2.0-sign(velocityy)*positiony)/(sign(velocityy)*velocityy);
    
     #goofball logic.
     if twalltemp2<=twalltemp1
@@ -149,11 +155,11 @@ function nextBoundary!(p::FreeFallParticle)
    
 end
 
-function moveParticle!(dt,p::FreeFallParticle)
+function moveParticle!(dt,p::FreeFallParticle,db::DiffuseBox)
  
     if p.time+dt<p.twall
-        p.pos = p.pos .+ (p.vel .* dt) .+ SV(0, 0, -gravity*dt*dt/2)
-        p.vel = p.vel .+ SV(0, 0, -gravity*dt)
+        p.pos = p.pos .+ (p.vel .* dt) .+ SV(0, 0, -p.gravity*dt*dt/2)
+        p.vel = p.vel .+ SV(0, 0, -p.gravity*dt)
         p.time=p.time+dt;
         #recursive until no wall is hit. 
         return; #the actual exit is here at the beginning
@@ -163,11 +169,11 @@ function moveParticle!(dt,p::FreeFallParticle)
 
     positionx=p.pos[1]+p.vel[1]*dtwall;
     positiony=p.pos[2]+p.vel[2]*dtwall;
-    positionz=p.pos[3]+p.vel[3]*dtwall-0.5*gravity*dtwall*dtwall;
+    positionz=p.pos[3]+p.vel[3]*dtwall-0.5*p.gravity*dtwall*dtwall;
 	
     velocityx=p.vel[1];
     velocityy=p.vel[2];
-    velocityz=p.vel[3]-gravity*dtwall;
+    velocityz=p.vel[3]-p.gravity*dtwall;
     whatwall=p.whatwall;
     twall=p.twall;
 
@@ -177,7 +183,7 @@ function moveParticle!(dt,p::FreeFallParticle)
 	#might be necessary to clamp to the wall if it hits the corner. 
    	#position[2]=position[2]>0? length/2.0:-length/2.0;
    			
-	if rand(Float64)>diffuse
+	if rand(Float64)>db.diffuse
 	    #specular
 	    velocityz=-velocityz;
         
@@ -198,7 +204,7 @@ function moveParticle!(dt,p::FreeFallParticle)
 	#might be necessary to clamp to the wall if it hits the corner. 
    	#position[2]=position[2]>0? length/2.0:-length/2.0;
    	
-	if rand(Float64)>diffuse
+	if rand(Float64)>db.diffuse
 	    #specular
 	    
 	    velocityy=-velocityy;
@@ -222,7 +228,7 @@ function moveParticle!(dt,p::FreeFallParticle)
 	#might be necessary to clamp to the wall if it hits the corner. 
    	#position[2]=position[2]>0? length/2.0:-length/2.0;
    	
-	if rand(Float64)>diffuse
+	if rand(Float64)>db.diffuse
 	    #specular
 	    
 	    velocityx=-velocityx;
@@ -250,8 +256,8 @@ function moveParticle!(dt,p::FreeFallParticle)
 
     p.pos=SV(positionx,positiony,positionz)
     p.vel=SV(velocityx,velocityy,velocityz)
-    nextBoundary!(p)
-    moveParticle!(dt-dtwall,p)
+    nextBoundary!(p, db)
+    moveParticle!(dt-dtwall,p, db)
     
     return#exiting from recursive calls.
 end

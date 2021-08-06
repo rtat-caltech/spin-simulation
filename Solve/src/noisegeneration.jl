@@ -91,16 +91,17 @@ const coordtransform = [
     0 1 0;
 ]
 
-function createtrajectory(duration, dt)
-    p = createStructure()
-    startInside!(p)
+export createtrajectory
+
+function createtrajectory(duration, dt, particle, container)
+    startInside!(particle, container)
     times = 0:dt:duration
     positions = zeros(Float64, (3, length(times)))
     velocities = zeros(Float64, (3, length(times)))
     for i=1:length(times)
-        positions[:,i] = p.pos
-        velocities[:,i] = p.vel
-        moveParticle!(dt,p)
+        positions[:,i] = particle.pos
+        velocities[:,i] = particle.vel
+        moveParticle!(dt, particle, container)
     end
     return coordtransform * positions, coordtransform * velocities
 end
@@ -121,10 +122,20 @@ function spatialbfield(tarr, positions, velocities, gradients, Efield)
     return Bxfunc, Byfunc, Bzfunc
 end
 
-function spatialnoise(gradients, Efield, duration, noiserate)
+function spatialnoise(gradients, Efield, duration, noiserate;
+                      box_x=box_defaults["x"],
+                      box_y=box_defaults["y"],
+                      box_z=box_defaults["z"],
+                      diffuse=box_defaults["diffuse"],
+                      g=box_defaults["g"],
+                      vmax=4.0)
+    p = createStructure()
+    p.vmax = vmax
+    p.gravity = g
+    container = DiffuseBox(box_x, box_y, box_z, diffuse)
     times = 0:1/noiserate:duration
     function f(x)
-        positions, velocities = createtrajectory(duration, 1/noiserate)
+        positions, velocities = createtrajectory(duration, 1/noiserate, p, container)
         return spatialbfield(times, positions, velocities, gradients, Efield)
     end
     Iterators.map(f, Iterators.repeated(nothing)) # Hack to make an iterator that goes forever
@@ -198,7 +209,6 @@ function preprocess(data;
     # Filter out DC offsets and drifts
     if lowercutoff != 0.0
         filter = digitalfilter(Highpass(lowercutoff; fs=fs), filtertype)
-        #filter = digitalfilter(Bandpass(lowercutoff, 1500; fs=fs), filtertype)
         data = filt(filter, data)/abs(freqz(filter, w/(2*pi), fs))
     end
     # Cut out glitches

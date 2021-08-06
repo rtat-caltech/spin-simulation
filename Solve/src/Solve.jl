@@ -35,9 +35,9 @@ const crit_params = Dict("B0"=>0.050, "B1"=>4.0289106454828055e-1, "w"=>6283.185
 
 include("noisegeneration.jl")
 
-function dS_general(B0, B1, w, gyro1, gyro2, Bxfunc, Byfunc, Bzfunc)
+function dS_general(B0, B1, w, gyro1, gyro2, B1func, Bxfunc, Byfunc, Bzfunc)
     function dS(du, u, p, t)
-        Bx = Bxfunc(t) + B1*cos(w*t)
+        Bx = Bxfunc(t) + B1*cos(w*t) + B1func(t)
         By = Byfunc(t)
         Bz = Bzfunc(t) + B0
         du[1] = gyro1 * (u[2]*Bz - u[3]*By)
@@ -49,9 +49,9 @@ function dS_general(B0, B1, w, gyro1, gyro2, Bxfunc, Byfunc, Bzfunc)
     end
 end
 
-function dS_general_signal(B0, B1, w, gyro1, gyro2, Bxfunc, Byfunc, Bzfunc)
+function dS_general_signal(B0, B1, w, gyro1, gyro2, B1func, Bxfunc, Byfunc, Bzfunc)
     function dS(du, u, p, t)
-        Bx = Bxfunc(t) + B1*cos(w*t)
+        Bx = Bxfunc(t) + B1*cos(w*t) + B1func(t)
         By = Byfunc(t)
         Bz = Bzfunc(t) + B0
         du[1] = gyro1 * (u[2]*Bz - u[3]*By)
@@ -67,8 +67,9 @@ function dS_general_signal(B0, B1, w, gyro1, gyro2, Bxfunc, Byfunc, Bzfunc)
 end
 
 
-function state_from_phases(phi1, phi2)
-    [cos(phi1), sin(phi1), 0.0, cos(phi2), sin(phi2), 0.0]
+function state_from_phases(phi1, phi2, theta1, theta2)
+    [cos(phi1)*sin(theta1), sin(phi1)*sin(theta1), cos(theta1),
+     cos(phi2)*sin(theta2), sin(phi2)*sin(theta2), cos(theta2)]
 end
 
 function make_stateful(arg, type)
@@ -83,20 +84,23 @@ function postprocess(solu)
     return normalize(hcat(solu...))
 end
 
-function run_simulations(tend, n; 
+function run_simulations(tend, n;
                          B0=crit_params["B0"], 
                          B1=crit_params["B1"],
                          w=crit_params["w"],
-                         Bxfunc=repeated(t->0),
-                         Byfunc=repeated(t->0),
-                         Bzfunc=repeated(t->0),
-                         Bfunc=nothing,
+                         B1func=t->0,
+                         Bxfuncs=repeated(t->0),
+                         Byfuncs=repeated(t->0),
+                         Bzfuncs=repeated(t->0),
+                         Bfuncs=nothing,
                          initial_phases=(0.0,0.0),
+                         initial_latitudes=(pi/2, pi/2),
                          nsave=0,
                          saveat=[],
                          saveinplane=false,
                          output_type="bloch",
-                         compute_signal=false)
+                         compute_signal=false,
+                         solver_alg=Vern9())
 
     tspan = (0.0, tend)
     
@@ -108,34 +112,34 @@ function run_simulations(tend, n;
         saveat = range(tspan[1], tspan[2], length=nsave)
     end
 
-    Bxfunc = Iterators.Stateful(Bxfunc)
-    Byfunc = Iterators.Stateful(Byfunc)
-    Bzfunc = Iterators.Stateful(Bzfunc)
-    if Bfunc != nothing
-        Bfunc = Iterators.Stateful(Bfunc)
+    Bxfuncs = Iterators.Stateful(Bxfuncs)
+    Byfuncs = Iterators.Stateful(Byfuncs)
+    Bzfuncs = Iterators.Stateful(Bzfuncs)
+    if Bfuncs != nothing
+        Bfuncs = Iterators.Stateful(Bfuncs)
     end
     
     function prob_func(prob,i,repeat)
-        if Bfunc == nothing
-            Bx = popfirst!(Bxfunc)
-            By = popfirst!(Byfunc)
-            Bz = popfirst!(Bzfunc)
+        if Bfuncs == nothing
+            Bxfunc = popfirst!(Bxfuncs)
+            Byfunc = popfirst!(Byfuncs)
+            Bzfunc = popfirst!(Bzfuncs)
         else
-            Bx, By, Bz = popfirst!(Bfunc)
+            Bxfunc, Byfunc, Bzfunc = popfirst!(Bfuncs)
         end
         if compute_signal
-            dS = dS_general_signal(B0, B1, w, neutrongyro, he3gyro, Bx, By, Bz)
-            u0nh = push!(state_from_phases(initial_phases...), 0)
+            dS = dS_general_signal(B0, B1, w, neutrongyro, he3gyro, B1func, Bxfunc, Byfunc, Bzfunc)
+            u0nh = push!(state_from_phases(initial_phases..., initial_latitudes...), 0)
         else
-            dS = dS_general(B0, B1, w, neutrongyro, he3gyro, Bx, By, Bz)
-            u0nh = state_from_phases(initial_phases...)
+            dS = dS_general(B0, B1, w, neutrongyro, he3gyro, B1func, Bxfunc, Byfunc, Bzfunc)
+            u0nh = state_from_phases(initial_phases..., initial_latitudes...)
         end
         ODEProblem(dS,u0nh,tspan)
     end
 
     prob = nothing
     cb = saveinplane ? ContinuousCallback((u,t,integ)->u[3],integ->nothing,save_positions=(true,false)) : nothing
-
+    
     if output_type == "bloch"
         output_func = (sol, i)->((sol.t, postprocess(sol.u)), false)
     elseif output_type == "phase"
@@ -150,7 +154,7 @@ function run_simulations(tend, n;
     end
 
     ensembleprob = EnsembleProblem(prob, prob_func=prob_func, output_func=output_func)
-    solution = solve(ensembleprob, Tsit5(), EnsembleThreads(), saveat=saveat, dense=false, callback=cb, 
+    solution = solve(ensembleprob, solver_alg, EnsembleThreads(), saveat=saveat, dense=false, callback=cb, 
                      trajectories=n, abstol=1e-10, reltol=1e-10, maxiters=1e8, save_everystep=false)
     
     u_sim = output_type == "bloch" ? [pair[2] for pair=solution] : transpose([pair[2] for pair=solution])
