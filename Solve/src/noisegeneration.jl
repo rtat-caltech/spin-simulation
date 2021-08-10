@@ -14,6 +14,8 @@ end
 
 keyname = "dataBuffer";
 const speedoflight = 3e8
+const kB = 1.38e-23 # J/K
+const m3 = 1.15e-26 # kg
 
 ##################
 # Filtered Noise #
@@ -91,7 +93,8 @@ const coordtransform = [
     0 1 0;
 ]
 
-export createtrajectory
+# uncomment if you need to debug
+# export createtrajectory, DiffuseBox, FreeFallParticle, box_defaults, startInside!, moveParticle!
 
 function createtrajectory(duration, dt, particle, container)
     startInside!(particle, container)
@@ -128,11 +131,13 @@ function spatialnoise(gradients, Efield, duration, noiserate;
                       box_z=box_defaults["z"],
                       diffuse=box_defaults["diffuse"],
                       g=box_defaults["g"],
-                      vmax=4.0)
+                      tau_scatter=Inf,
+                      temperature=Inf,
+                      vmax=5.0)
     p = createStructure()
     p.vmax = vmax
     p.gravity = g
-    container = DiffuseBox(box_x, box_y, box_z, diffuse)
+    container = DiffuseBox(box_x, box_y, box_z, diffuse, tau_scatter, temperature)
     times = 0:1/noiserate:duration
     function f(x)
         positions, velocities = createtrajectory(duration, 1/noiserate, p, container)

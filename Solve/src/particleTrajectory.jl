@@ -32,7 +32,16 @@ struct DiffuseBox <: Container
     x::Float64 # Width
     y::Float64 # Length
     z::Float64 # Height
-    diffuse::Float64
+    diffuse::Float64 # Wall diffuse scattering probability
+    tau_scatter::Float64 # Phonon scattering time
+    T::Float64 # Temperature
+end
+
+function random_sphere_point()
+    # returns theta and phi for a random point on the unit sphere
+    thetap=acos(2.0*rand(Float64)-1.);
+    phip= 2.0*pi*rand(Float64);
+    thetap, phip
 end
 
 function createStructure()
@@ -66,10 +75,9 @@ function getIsotropic!(p::FreeFallParticle, db::DiffuseBox)
     #magnitude of the ::SV juliavelocity at the height  
     #(it is possible that this populates velocities in places that the neutron cannot replicate from diffuse wall collisions alone, but it should be good enough. )
     vmagh=sqrt(vmag*vmag-2.0*p.gravity*height)
-    thetap=acos(2.0*rand(Float64)-1.);
-    phip= 2.0*pi*rand(Float64);
+    thetap, phip = random_sphere_point()
     #velocity components adjusted for height.
-    p.vel=SV(vmagh*sin(thetap)*cos(phip),vmagh*sin(thetap)*sin(phip),vmagh*cos(thetap));
+    p.vel=SV(vmagh*sin(thetap)*cos(phip),vmagh*sin(thetap)*sin(phip),vmagh*cos(thetap))
     #return in geometry coordinates
     return height+floor;
 end
@@ -77,13 +85,17 @@ end
 
 function startInside!(p::FreeFallParticle, db::DiffuseBox)
     positionx=db.x*(rand(Float64)-0.5);
-    
     positiony=db.y*(rand(Float64)-0.5);
-    
-    positionz=getIsotropic!(p, db);
-
+    if p.vmax == Inf
+        # 3He
+        stddev = sqrt(kB*db.T/m3)
+        p.vel=SV(randn(3).*stddev)
+        positionz=db.z*(rand(Float64)-0.5);
+    else
+        # Neutron
+        positionz=getIsotropic!(p, db);
+    end
     p.pos = SV(positionx, positiony, positionz)
-    
     nextBoundary!(p, db)
 end
 
@@ -91,6 +103,8 @@ end
 function nextBoundary!(p::FreeFallParticle, db::DiffuseBox)
     positionx, positiony, positionz = p.pos
     velocityx, velocityy, velocityz = p.vel
+
+    tscatter = -db.tau_scatter * log(rand(Float64))
 
     #this may look similar to the z walls in the cylinder, but its different.
     #+-zwall=z0+vz*twall-1/2*g*twall^2
@@ -139,8 +153,13 @@ function nextBoundary!(p::FreeFallParticle, db::DiffuseBox)
     end
     
     #whatwall=twalltemp2<=twalltemp1 ? (twalltemp0<twalltemp2 ? 0:2):(twalltemp0<twalltemp1 ? 0:1);
-   
-    if whatwall==0 
+    if tscatter < min(twalltemp0, twalltemp1, twalltemp2)
+        whatwall = -1
+    end
+
+    if whatwall==-1
+        twall=p.time+tscatter
+    elseif whatwall==0 
         twall=p.time+twalltemp0
     elseif whatwall==1
         twall=p.time+twalltemp1
@@ -151,6 +170,7 @@ function nextBoundary!(p::FreeFallParticle, db::DiffuseBox)
     end
     p.twall=twall;
     p.whatwall=whatwall;
+
     return twall
    
 end
@@ -178,7 +198,14 @@ function moveParticle!(dt,p::FreeFallParticle,db::DiffuseBox)
     twall=p.twall;
 
     #what wall is a c++ private class variable (how do you do this fast in Julia?, lots of overhead?)
-    if whatwall==2
+    if whatwall==-1
+        # Scatter off of a phonon
+        theta, phi = random_sphere_point()
+        vmag=sqrt(velocityz*velocityz+velocityx*velocityx+velocityy*velocityy)
+        velocityz=vmag*cos(theta)
+	velocityx=vmag*sin(theta)*cos(phi)
+	velocityy=vmag*sin(theta)*sin(phi)
+    elseif whatwall==2
     
 	#might be necessary to clamp to the wall if it hits the corner. 
    	#position[2]=position[2]>0? length/2.0:-length/2.0;
