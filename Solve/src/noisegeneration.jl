@@ -2,6 +2,8 @@ using Parameters
 using DSP
 using FFTW
 
+export interp
+
 @with_kw struct NoiseIterator
     Bnoise::Float64
     duration::Float64
@@ -94,7 +96,7 @@ const coordtransform = [
 ]
 
 # uncomment if you need to debug
-# export createtrajectory, DiffuseBox, FreeFallParticle, box_defaults, startInside!, moveParticle!
+ export createtrajectory, DiffuseBox, FreeFallParticle, box_defaults, startInside!, moveParticle!, createStructure
 
 function createtrajectory(duration, dt, particle, container)
     startInside!(particle, container)

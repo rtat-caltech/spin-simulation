@@ -5,6 +5,8 @@
 #const diffuse=0.01
 #const vmax=5;
 using StaticArrays
+using Random
+
 const SV = SVector{3,Float64} # We're working in 3D space here, folks.
 const box_defaults = Dict("x"=>0.4, "y"=>0.076, "z"=>0.102, "diffuse"=>0.01, "g"=>9.81)
 
@@ -105,7 +107,7 @@ function nextBoundary!(p::FreeFallParticle, db::DiffuseBox)
     velocityx, velocityy, velocityz = p.vel
 
     tscatter = -db.tau_scatter * log(rand(Float64))
-
+    
     #this may look similar to the z walls in the cylinder, but its different.
     #+-zwall=z0+vz*twall-1/2*g*twall^2
     #why so much harder in julia?
@@ -175,8 +177,7 @@ function nextBoundary!(p::FreeFallParticle, db::DiffuseBox)
    
 end
 
-function moveParticle!(dt,p::FreeFallParticle,db::DiffuseBox)
- 
+function moveParticle!(dt,p::FreeFallParticle,db::DiffuseBox)    
     if p.time+dt<p.twall
         p.pos = p.pos .+ (p.vel .* dt) .+ SV(0, 0, -p.gravity*dt*dt/2)
         p.vel = p.vel .+ SV(0, 0, -p.gravity*dt)
@@ -200,11 +201,18 @@ function moveParticle!(dt,p::FreeFallParticle,db::DiffuseBox)
     #what wall is a c++ private class variable (how do you do this fast in Julia?, lots of overhead?)
     if whatwall==-1
         # Scatter off of a phonon
+        #=
         theta, phi = random_sphere_point()
         vmag=sqrt(velocityz*velocityz+velocityx*velocityx+velocityy*velocityy)
         velocityz=vmag*cos(theta)
 	velocityx=vmag*sin(theta)*cos(phi)
 	velocityy=vmag*sin(theta)*sin(phi)
+        =#
+
+        stddev = sqrt(kB*db.T/m3)
+        vrand=SV(randn(3).*stddev)
+        velocityx, velocityy, velocityz = vrand
+
     elseif whatwall==2
     
 	#might be necessary to clamp to the wall if it hits the corner. 

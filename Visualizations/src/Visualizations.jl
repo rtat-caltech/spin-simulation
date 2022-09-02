@@ -4,7 +4,7 @@ using LinearAlgebra
 using Statistics
 using Utils
 
-export determine_axes, get_quivers, blochplot
+export determine_axes, get_quivers, blochplot, project
 
 function unit(vec)
     vec./sqrt(dot(vec, vec))

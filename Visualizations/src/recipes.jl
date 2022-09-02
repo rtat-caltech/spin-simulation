@@ -7,6 +7,7 @@
     xlims --> (-axlim, axlim)
     ylims --> (-axlim, axlim)
     x .- mean(x), y .- mean(y)
+    #x, y
 end
 
 @userplot ShadowPlot

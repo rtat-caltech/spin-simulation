@@ -1,6 +1,6 @@
 module Analysis
 export compare_phase, extract_noise, extract_signal
-export predict_signal_std, predict_phase, predict_shift, predict_polarization, predict_signal_variance
+export predict_phase, predict_shift, predict_polarization, predict_signal_variance
 export aggregate_data, read_metadata, get_random_metadata
 using Utils
 using Solve

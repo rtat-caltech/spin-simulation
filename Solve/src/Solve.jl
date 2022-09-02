@@ -93,6 +93,7 @@ function run_simulations(tend, n;
                          Byfuncs=repeated(t->0),
                          Bzfuncs=repeated(t->0),
                          Bfuncs=nothing,
+                         gammas=(neutrongyro, he3gyro),
                          initial_phases=(0.0,0.0),
                          initial_latitudes=(pi/2, pi/2),
                          nsave=0,
@@ -100,7 +101,10 @@ function run_simulations(tend, n;
                          saveinplane=false,
                          output_type="bloch",
                          compute_signal=false,
-                         solver_alg=Vern9())
+                         solver_alg=Vern9(),
+                         abstol=1e-10,
+                         reltol=1e-10,
+                         ensemblehandling=EnsembleThreads())
 
     tspan = (0.0, tend)
     
@@ -128,10 +132,10 @@ function run_simulations(tend, n;
             Bxfunc, Byfunc, Bzfunc = popfirst!(Bfuncs)
         end
         if compute_signal
-            dS = dS_general_signal(B0, B1, w, neutrongyro, he3gyro, B1func, Bxfunc, Byfunc, Bzfunc)
+            dS = dS_general_signal(B0, B1, w, gammas[1], gammas[2], B1func, Bxfunc, Byfunc, Bzfunc)
             u0nh = push!(state_from_phases(initial_phases..., initial_latitudes...), 0)
         else
-            dS = dS_general(B0, B1, w, neutrongyro, he3gyro, B1func, Bxfunc, Byfunc, Bzfunc)
+            dS = dS_general(B0, B1, w, gammas[1], gammas[2], B1func, Bxfunc, Byfunc, Bzfunc)
             u0nh = state_from_phases(initial_phases..., initial_latitudes...)
         end
         ODEProblem(dS,u0nh,tspan)
@@ -154,8 +158,8 @@ function run_simulations(tend, n;
     end
 
     ensembleprob = EnsembleProblem(prob, prob_func=prob_func, output_func=output_func)
-    solution = solve(ensembleprob, solver_alg, EnsembleThreads(), saveat=saveat, dense=false, callback=cb, 
-                     trajectories=n, abstol=1e-10, reltol=1e-10, maxiters=1e8, save_everystep=false)
+    solution = solve(ensembleprob, solver_alg, ensemblehandling, saveat=saveat, dense=false, callback=cb, 
+                     trajectories=n, abstol=abstol, reltol=reltol, maxiters=1e8, save_everystep=false)
     
     u_sim = output_type == "bloch" ? [pair[2] for pair=solution] : transpose([pair[2] for pair=solution])
     if length(saveat) == 0
