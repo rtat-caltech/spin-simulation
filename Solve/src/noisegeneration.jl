@@ -2,6 +2,8 @@ using Parameters
 using DSP
 using FFTW
 
+export interp
+
 @with_kw struct NoiseIterator
     Bnoise::Float64
     duration::Float64
@@ -13,10 +15,17 @@ using FFTW
 end
 
 keyname = "dataBuffer";
+const speedoflight = 3e8
+const kB = 1.38e-23 # J/K
+const m3 = 1.15e-26 # kg
 
 ##################
 # Filtered Noise #
 ##################
+
+function filterednoise(rms, t, noiserate; lowercutoff=0.0, uppercutoff=0.0, filtertype=Elliptic(7, 1, 60), repeat=1)
+    return NoiseIterator(rms, t, noiserate, lowercutoff, uppercutoff, filtertype, repeat)
+end
 
 function Base.iterate(iter::NoiseIterator, state=(0, nothing))
     if state[1] % iter.repeat == 0
@@ -26,10 +35,6 @@ function Base.iterate(iter::NoiseIterator, state=(0, nothing))
     else
         return state[2], (state[1]+1, state[2])
     end
-end
-
-function NoiseIterator(rms, t, noiserate; lowercutoff=0.0, uppercutoff=0.0, filtertype=Elliptic(7, 1, 60), repeat=1)
-    return NoiseIterator(rms, t, noiserate, lowercutoff, uppercutoff, filtertype, repeat)
 end
 
 function perfect_filter(sample, lower, upper, fs)
@@ -80,13 +85,69 @@ end
 # Noise from Gradients #
 ########################
 
-function spatial_noise(tarr, xpts, ypts, zpts, gradients)
-    Bpts = gradients * [xpts; ypts; zpts]
+include("particleTrajectory.jl")
+
+# The convention for xyz are different in particleTrajectory.jl
+# Make this the identity if that gets fixed someday
+const coordtransform = [
+    1 0 0;
+    0 0 -1;
+    0 1 0;
+]
+
+# uncomment if you need to debug
+ export createtrajectory, DiffuseBox, FreeFallParticle, box_defaults, startInside!, moveParticle!, createStructure
+
+function createtrajectory(duration, dt, particle, container)
+    startInside!(particle, container)
+    times = 0:dt:duration
+    positions = zeros(Float64, (3, length(times)))
+    velocities = zeros(Float64, (3, length(times)))
+    for i=1:length(times)
+        positions[:,i] = particle.pos
+        velocities[:,i] = particle.vel
+        moveParticle!(dt, particle, container)
+    end
+    return coordtransform * positions, coordtransform * velocities
+end
+
+function spatialbfield(tarr, positions, velocities, gradients, Efield)
+    # Gradient term + v x E term
+    # Compute cross product as matrix mul
+    Ex, Ey, Ez = Efield
+    Ematrix = [
+        0 Ez -Ey;
+        -Ez 0 Ex;
+        Ey -Ex 0;
+    ] .* (1e4/speedoflight^2)
+    Bpts = (gradients * positions) .+ (Ematrix * velocities)
     Bxfunc = interp(tarr, Bpts[1,:]; interpolation="linear")
     Byfunc = interp(tarr, Bpts[2,:]; interpolation="linear")
-    Bzfunc = interp(tarr, Bpts[3,:]; interpolation="linear")    
+    Bzfunc = interp(tarr, Bpts[3,:]; interpolation="linear")
     return Bxfunc, Byfunc, Bzfunc
 end
+
+function spatialnoise(gradients, Efield, duration, noiserate;
+                      box_x=box_defaults["x"],
+                      box_y=box_defaults["y"],
+                      box_z=box_defaults["z"],
+                      diffuse=box_defaults["diffuse"],
+                      g=box_defaults["g"],
+                      tau_scatter=Inf,
+                      temperature=Inf,
+                      vmax=5.0)
+    p = createStructure()
+    p.vmax = vmax
+    p.gravity = g
+    container = DiffuseBox(box_x, box_y, box_z, diffuse, tau_scatter, temperature)
+    times = 0:1/noiserate:duration
+    function f(x)
+        positions, velocities = createtrajectory(duration, 1/noiserate, p, container)
+        return spatialbfield(times, positions, velocities, gradients, Efield)
+    end
+    Iterators.map(f, Iterators.repeated(nothing)) # Hack to make an iterator that goes forever
+end
+
 
 ###################
 # Noise from File #
@@ -155,7 +216,6 @@ function preprocess(data;
     # Filter out DC offsets and drifts
     if lowercutoff != 0.0
         filter = digitalfilter(Highpass(lowercutoff; fs=fs), filtertype)
-        #filter = digitalfilter(Bandpass(lowercutoff, 1500; fs=fs), filtertype)
         data = filt(filter, data)/abs(freqz(filter, w/(2*pi), fs))
     end
     # Cut out glitches
@@ -246,7 +306,7 @@ function waveform_is_ok(data, fs)
     return true
 end
 
-function daq_noise_iterator(directory, duration; 
+function daqnoise(directory, duration; 
         B1=crit_params["B1"], 
         w=crit_params["w"], 
         lowercutoff=0.0, 
