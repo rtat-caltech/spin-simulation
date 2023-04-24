@@ -228,7 +228,7 @@ function moveParticle!(dt,p::FreeFallParticle,db::DiffuseBox)
 	    #maybe template this in a spline for extra speed? lets see how bad it is. 
 	    #method one.
             vmag=sqrt(velocityz*velocityz+velocityx*velocityx+velocityy*velocityy)
-            temptheta=acos(cbrt(rand(Float64)))
+            temptheta=acos(sqrt(rand(Float64)))
             tempphi=2.0*pi*rand(Float64)
 	    velocityz=-vmag*sign(positionz)*cos(temptheta)
 	    velocityx=vmag*sin(temptheta)*cos(tempphi)
@@ -250,7 +250,7 @@ function moveParticle!(dt,p::FreeFallParticle,db::DiffuseBox)
 	    #maybe template this in a spline for extra speed? lets see how bad it is. 
 	    #method one.
 	    vmag=sqrt(velocityz*velocityz+velocityx*velocityx+velocityy*velocityy)
-	    temptheta=acos(cbrt(rand(Float64)))
+	    temptheta=acos(sqrt(rand(Float64)))
 	    tempphi=2.0*pi*rand(Float64)
 	    velocityy=-vmag*sign(positiony)*cos(temptheta)
 	    velocityx=vmag*sin(temptheta)*cos(tempphi)
@@ -274,7 +274,7 @@ function moveParticle!(dt,p::FreeFallParticle,db::DiffuseBox)
 	    #maybe template this in a spline for extra speed? lets see how bad it is. 
 	    
 	    vmag=sqrt(velocityz*velocityz+velocityx*velocityx+velocityy*velocityy)
-	    temptheta=acos(cbrt(rand(Float64)))
+	    temptheta=acos(sqrt(rand(Float64)))
 	    tempphi=2.0*pi*rand(Float64)
 	    velocityx=-vmag*sign(positionx)*cos(temptheta)
 	    velocityy=vmag*sin(temptheta)*cos(tempphi)

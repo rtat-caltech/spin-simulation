@@ -2,5 +2,6 @@
 *.npy
 *.png
 *.m
+*.gif
 examples/data
 examples/.ipynb_checkpoints

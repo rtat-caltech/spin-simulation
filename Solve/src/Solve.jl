@@ -23,6 +23,7 @@ using Interpolations
 using SpecialFunctions
 using IterTools
 using Base.Iterators
+using Waveforms
 using MAT
 
 const neutrongyro = -1.83247172e4
@@ -35,13 +36,37 @@ const crit_params = Dict("B0"=>0.050, "B1"=>4.0289106454828055e-1, "w"=>6283.185
 
 include("noisegeneration.jl")
 
-function dS_general(B0, B1, w, gyro1, gyro2, B1func, Bxfunc, Byfunc, Bzfunc)
+
+function dS_pseudo(B0, B1, w, gyro1, gyro2, B1func, Bxfunc, Byfunc, Bzfunc, edm_coupling, pseudo_mag, pseudo_freq, pseudo_duty)
+    # Integrand for testing pseudomagnetic field effect, in particular to see if the discrete nature of 3He-neutron interactions affects anything
+    # pseudo_mag: average magnitude of pseudomagnetic field
+    # pseudo_freq: frequency of pseudomagnetic field "pulses"
+    # pseudo_duration: duration of pseudomagnetic field "pulses"
+    function dS(du, u, p, t)
+        pseudo_amp = (pseudo_mag/pseudo_duty) * (squarewave(2*pi*pseudo_freq*t, pseudo_duty)+1)/2
+        Bx = Bxfunc(t) + B1*cos(w*t) + B1func(t)
+        By = Byfunc(t)
+        Bz = Bzfunc(t) + B0
+        Px = u[4]*pseudo_amp
+        Py = u[5]*pseudo_amp
+        Pz = u[6]*pseudo_amp
+        du[1] = gyro1 * (u[2]*(Bz+Pz) - u[3]*(By+Py)) + u[2]*edm_coupling
+        du[2] = gyro1 * (u[3]*(Bx+Px) - u[1]*(Bz+Pz)) - u[1]*edm_coupling
+        du[3] = gyro1 * (u[1]*(By+Py) - u[2]*(Bx+Px))
+        du[4] = gyro2 * (u[5]*Bz - u[6]*By)
+        du[5] = gyro2 * (u[6]*Bx - u[4]*Bz)
+        du[6] = gyro2 * (u[4]*By - u[5]*Bx)
+    end
+end
+
+
+function dS_general(B0, B1, w, gyro1, gyro2, B1func, Bxfunc, Byfunc, Bzfunc, edm_coupling)
     function dS(du, u, p, t)
         Bx = Bxfunc(t) + B1*cos(w*t) + B1func(t)
         By = Byfunc(t)
         Bz = Bzfunc(t) + B0
-        du[1] = gyro1 * (u[2]*Bz - u[3]*By)
-        du[2] = gyro1 * (u[3]*Bx - u[1]*Bz)
+        du[1] = gyro1 * (u[2]*Bz - u[3]*By) + u[2]*edm_coupling
+        du[2] = gyro1 * (u[3]*Bx - u[1]*Bz) - u[1]*edm_coupling
         du[3] = gyro1 * (u[1]*By - u[2]*Bx)
         du[4] = gyro2 * (u[5]*Bz - u[6]*By)
         du[5] = gyro2 * (u[6]*Bx - u[4]*Bz)
@@ -49,13 +74,13 @@ function dS_general(B0, B1, w, gyro1, gyro2, B1func, Bxfunc, Byfunc, Bzfunc)
     end
 end
 
-function dS_general_signal(B0, B1, w, gyro1, gyro2, B1func, Bxfunc, Byfunc, Bzfunc)
+function dS_general_signal(B0, B1, w, gyro1, gyro2, B1func, Bxfunc, Byfunc, Bzfunc, edm_coupling)
     function dS(du, u, p, t)
         Bx = Bxfunc(t) + B1*cos(w*t) + B1func(t)
         By = Byfunc(t)
         Bz = Bzfunc(t) + B0
-        du[1] = gyro1 * (u[2]*Bz - u[3]*By)
-        du[2] = gyro1 * (u[3]*Bx - u[1]*Bz)
+        du[1] = gyro1 * (u[2]*Bz - u[3]*By) + u[2]*edm_coupling
+        du[2] = gyro1 * (u[3]*Bx - u[1]*Bz) - u[1]*edm_coupling
         du[3] = gyro1 * (u[1]*By - u[2]*Bx)
         du[4] = gyro2 * (u[5]*Bz - u[6]*By)
         du[5] = gyro2 * (u[6]*Bx - u[4]*Bz)
@@ -93,6 +118,10 @@ function run_simulations(tend, n;
                          Byfuncs=repeated(t->0),
                          Bzfuncs=repeated(t->0),
                          Bfuncs=nothing,
+                         edm_coupling=0, #dn dot E in units of rad/s
+                         pseudo_mag=0,
+                         pseudo_freq=0,
+                         pseudo_duty=1.0,
                          gammas=(neutrongyro, he3gyro),
                          initial_phases=(0.0,0.0),
                          initial_latitudes=(pi/2, pi/2),
@@ -131,11 +160,14 @@ function run_simulations(tend, n;
         else
             Bxfunc, Byfunc, Bzfunc = popfirst!(Bfuncs)
         end
-        if compute_signal
-            dS = dS_general_signal(B0, B1, w, gammas[1], gammas[2], B1func, Bxfunc, Byfunc, Bzfunc)
+        if pseudo_mag != 0
+            dS = dS_pseudo(B0, B1, w, gammas[1], gammas[2], B1func, Bxfunc, Byfunc, Bzfunc, edm_coupling, pseudo_mag, pseudo_freq, pseudo_duty)
+            u0nh = push!(state_from_phases(initial_phases..., initial_latitudes...), 0)
+        elseif compute_signal
+            dS = dS_general_signal(B0, B1, w, gammas[1], gammas[2], B1func, Bxfunc, Byfunc, Bzfunc, edm_coupling)
             u0nh = push!(state_from_phases(initial_phases..., initial_latitudes...), 0)
         else
-            dS = dS_general(B0, B1, w, gammas[1], gammas[2], B1func, Bxfunc, Byfunc, Bzfunc)
+            dS = dS_general(B0, B1, w, gammas[1], gammas[2], B1func, Bxfunc, Byfunc, Bzfunc, edm_coupling)
             u0nh = state_from_phases(initial_phases..., initial_latitudes...)
         end
         ODEProblem(dS,u0nh,tspan)
@@ -158,8 +190,15 @@ function run_simulations(tend, n;
     end
 
     ensembleprob = EnsembleProblem(prob, prob_func=prob_func, output_func=output_func)
+    
+    if pseudo_mag != 0 && pseudo_freq > 0 && pseudo_duty < 1
+        Tp = 1/pseudo_freq
+        tstops = sort(vcat(0:Tp:tend, (0:Tp:tend).+pseudo_duty*Tp))
+    else
+        tstops = []
+    end
     solution = solve(ensembleprob, solver_alg, ensemblehandling, saveat=saveat, dense=false, callback=cb, 
-                     trajectories=n, abstol=abstol, reltol=reltol, maxiters=1e8, save_everystep=false)
+                     trajectories=n, abstol=abstol, reltol=reltol, maxiters=1e8, save_everystep=false, tstops=tstops)
     
     u_sim = output_type == "bloch" ? [pair[2] for pair=solution] : transpose([pair[2] for pair=solution])
     if length(saveat) == 0

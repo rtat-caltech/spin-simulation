@@ -328,7 +328,7 @@ function daqnoise(directory, duration;
 
     it0 = imap(d->make_waveform(d, duration, norm;
                                 phase=pi/2,
-                                B1=B1,                          
+                                B1=B1,
                                 w=w,
                                 lowercutoff=lowercutoff,
                                 filtertype=filtertype,
